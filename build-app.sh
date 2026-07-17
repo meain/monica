@@ -5,6 +5,11 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# A nix-provided SDKROOT breaks the system CLT compiler — see the note in
+# the Makefile (which also unexports these, but this script can be run
+# directly too).
+unset SDKROOT DEVELOPER_DIR
+
 echo "Building release…"
 swift build -c release
 

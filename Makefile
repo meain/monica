@@ -1,6 +1,14 @@
 APP      := monica.app
 APPS_DIR := /Applications
 
+# The nix devshell / profile exports SDKROOT pointing at the nix apple-sdk,
+# which the system CLT compiler refuses ("SDK is not supported by the
+# compiler" / "no such module 'SwiftShims'"). This project deliberately
+# builds with the system toolchain (see AGENTS.md), so strip those vars from
+# everything make runs.
+unexport SDKROOT
+unexport DEVELOPER_DIR
+
 .PHONY: build run release app install link unlink format lint clean help
 
 help: ## Show this help
