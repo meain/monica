@@ -6,6 +6,13 @@ tmux-popup picker (`,tmux-ai-agents`), not a replacement — that fzf-based pick
 as the fast keyboard-only path from inside tmux; monica adds a macOS-native layer that
 works even when tmux isn't focused.
 
+**v1.1 note:** the original plan had three UI surfaces (menu bar, an always-on HUD
+strip, and a separate Spotlight popup). After using v1, that collapsed to one: a single
+menu bar popover (search + list + Settings/Quit), opened either by clicking the status
+item or via the global hotkey. The HUD strip added visual clutter for no real benefit
+over the menu bar title glyph, and a second picker UI was redundant once the popover had
+search. See "Decisions made during planning" for what changed and why.
+
 ## Problem
 
 `,tmux-ai-agents` already does this well inside tmux (`M-'` → fzf popup → pick an agent
@@ -25,9 +32,13 @@ frontmost, or live in the menu bar. That's the gap monica fills.
   status detection.
 - `~/dev/src/beacon` — SwiftPM (no Xcode), borderless `FloatingPanel` Spotlight-style
   popup, `LSUIElement` `.app` bundling via a `build-app.sh` + `Makefile`. monica's
-  Spotlight popup and packaging are templated directly on this.
-- `~/dev/src/mactraffic` — `NSStatusItem` + `NSPopover` menu bar pattern. monica's menu
-  bar mode is templated on this.
+  packaging is templated directly on this, and its `PickerModel` (an AppKit local
+  event monitor for arrow/return/escape, since SwiftUI's `.onKeyPress` doesn't reliably
+  receive focus in a popover/panel) is the basis for `AgentPickerModel`.
+- `~/dev/src/mactraffic` — `NSStatusItem` + `NSPopover` menu bar pattern, including
+  setting an **explicit `popover.contentSize`** rather than letting `NSPopover` guess
+  one from the hosted SwiftUI view. monica initially skipped this and paid for it (see
+  "Decisions made during planning").
 - `~/dev/src/menutimer` — `flake.nix` devshell pattern (nix only provides dev tooling
   like `swift-format`; the Swift compiler itself comes from the system Xcode Command
   Line Tools, since nixpkgs' Swift on macOS is unreliable).
@@ -46,10 +57,26 @@ frontmost, or live in the menu bar. That's the gap monica fills.
 | notifications | out of scope for v1 — existing `notify-summary.sh` pipeline stays as-is |
 | tmux scope | local tmux server(s) only, no SSH/remote |
 | window switching | single-Ghostty-window assumption; no Accessibility-API disambiguation yet |
-| overlay mode | a persistent HUD strip docked to the top edge, not a pinned popup |
-| Spotlight trigger | native global hotkey (Carbon `RegisterEventHotKey`), default ⌃⌥⇧A, user-customizable |
-| target app | configurable, defaults to Ghostty (`com.mitchellh.ghostty`) |
+| number of UI surfaces | **v1.1: one** — the menu bar popover. Dropped the always-on HUD strip and the separate Spotlight window (see below) |
+| global hotkey | opens/toggles the *same* menu bar popover — not a second picker UI |
+| picker search | a search field inside the popover filters the agent list (ported from the old Spotlight popup) |
+| Settings | a proper `NSWindow` (not a panel), opened from a footer row in the popover; lets you re-record the hotkey and change the target app |
+| target app | configurable in Settings (text field + an "Choose…" `NSOpenPanel`), defaults to Ghostty (`com.mitchellh.ghostty`) |
+| Spotlight hotkey default | native global hotkey (Carbon `RegisterEventHotKey`), default ⌃⌥⇧A, re-recordable live from Settings |
 | agent scope | whatever's in the aistatus files today (Claude Code hook schema); can extend later |
+
+**Why the HUD/Spotlight-window surfaces got dropped:** using v1 for real showed the HUD
+strip's one-glyph-per-agent display could just as well live in the menu bar title
+itself — no need for a separate always-on-top window to show the same information. The
+Spotlight popup, once it grew a search field, was doing exactly what the menu bar
+popover could do — so the hotkey now just opens that popover instead of a second,
+nearly-identical window.
+
+**The positioning bug:** the menu bar popover used to open ~180pt below the status item
+instead of right beneath it. Root cause: `NSPopover` was never given an explicit
+`contentSize`, so it had to guess one from the hosted SwiftUI view before its first
+layout pass; that ambiguous guess corrupted the anchor math. Fixed by setting
+`popover.contentSize` explicitly at init, matching mactraffic's `StatusBarController`.
 
 ## Architecture
 
@@ -60,26 +87,33 @@ AgentScanner (polls every 2s)
   └─ ~/.local/share/aistatus/pid-<pid>.json  ────────▶ status/project/timestamp
         │
         ▼
-  [AgentSession] (@Published, single shared store)
+  scanner.sessions
         │
-   ┌────┼────────────────┬─────────────────────┐
-   ▼                     ▼                     ▼
-MenuBarController   HUDPanel              SpotlightPanel
-(NSStatusItem        (borderless           (FloatingPanel,
- + popover,           always-on-top        global hotkey,
- aggregate glyph)     panel, top edge)      fuzzy filter)
-   │                     │                     │
-   └─────────────────────┴─────────────────────┘
-                          ▼
-                      Switcher
-       tmux select-pane → resolve session:window →
-       tmux list-clients → switch-client -c <client> -t <target> →
-       open -a <configured app>
+        ▼
+MenuBarController (NSStatusItem: one glyph per agent, e.g. "▶ ● ○")
+        │  click icon ──┐
+        │  global hotkey┤──▶ togglePopover()
+        │               │
+        ▼               ▼
+   NSPopover: search field → AgentPickerModel.filteredSessions → AgentListView
+        │                                                            │
+        │                                          click a row / Enter
+        │                                                            ▼
+        │                                                        Switcher
+        │                                          tmux select-pane → resolve
+        │                                          session:window → tmux
+        │                                          list-clients → switch-client
+        │                                          -c <client> -t <target> →
+        │                                          open -a <configured app>
+        ▼
+  footer: "Settings…" → SettingsWindowController (NSWindow)
+          "Quit monica"
 ```
 
-All three UI surfaces render the same `AgentListView` and call the same `Switcher`
-action — they're different presentations of one shared `AgentStore`, not three
-separate implementations.
+Settings changes flow back in one direction: editing the target app writes straight to
+`AppSettings` (read by `Switcher` on the next switch); re-recording the hotkey writes to
+`AppSettings` *and* calls back into `AppDelegate.registerHotKey()` to re-register with
+Carbon immediately, so it takes effect without restarting the app.
 
 ### AgentSession model
 
@@ -103,8 +137,11 @@ struct AgentSession: Identifiable {
 ### Status glyphs
 
 Same as `,tmux-ai-agents`: `▶` working (green), `●` waiting (yellow), `○` idle (gray).
-Menu bar aggregate glyph = highest-priority status across all sessions
-(`working > waiting > idle`), same priority rule as `,tmux-claude-status`.
+The menu bar title shows one glyph per agent (e.g. `▶ ● ○` for one working, one
+waiting, one idle) — this is what the old HUD strip showed, now living directly in the
+title instead of a separate window. `AgentStatus`'s `Comparable` conformance
+(`working > waiting > idle`) is used elsewhere (e.g. sort order) but no longer collapses
+the title to a single aggregate glyph.
 
 ### Switching, precisely
 
@@ -139,10 +176,12 @@ monica/
     Switcher.swift               # switch-client / select-pane / open -a
     AppSettings.swift             # UserDefaults-backed settings, shared singleton
     HotKeyManager.swift            # Carbon global hotkey registration
-    AgentListView.swift             # shared SwiftUI row/list view
-    MenuBarController.swift          # NSStatusItem + popover
-    HUDPanel.swift                    # top-edge always-on-top strip
-    SpotlightPanel.swift               # FloatingPanel + fuzzy filter
+    HotKeyFormatter.swift           # keyCode+modifiers -> display label ("⌃⌥⇧A")
+    KeyRecorderView.swift            # hotkey re-recording control, used in Settings
+    AgentListView.swift               # shared SwiftUI row/list view
+    AgentPickerModel.swift             # popover search + keyboard nav (arrow/enter/esc)
+    MenuBarController.swift            # NSStatusItem + popover (search, list, footer)
+    SettingsView.swift                 # SettingsView + SettingsWindowController
 ```
 
 ## Build / run
@@ -166,4 +205,4 @@ make link        # symlink monica.app into /Applications
 - monica owning desktop notifications (currently `notify-summary.sh`'s job); would
   enable focus-aware suppression (don't notify if the right window is already
   frontmost).
-- Draggable/configurable HUD position (v1 is fixed to the top edge).
+- Launch-at-login toggle (currently manual — `open -a monica` or Login Items).

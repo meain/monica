@@ -1,76 +1,177 @@
 import AppKit
 import SwiftUI
 
+private struct FooterRow: View {
+    let systemImage: String
+    let title: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: systemImage)
+                Text(title)
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct MenuBarPopoverView: View {
+    @ObservedObject var model: AgentPickerModel
+    let onSettings: () -> Void
+    let onQuit: () -> Void
+    @FocusState private var searchFocused: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            TextField("Search agents…", text: $model.filterText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 14))
+                .padding(8)
+                .focused($searchFocused)
+
+            Divider()
+
+            ScrollView {
+                AgentListView(
+                    sessions: model.filteredSessions,
+                    selection: model.selection,
+                    onSelect: model.choose
+                )
+            }
+            // A `maxHeight` alone reports zero ideal height to the hosting
+            // popover — same ScrollView gotcha noted in AGENTS.md. Use a real
+            // fixed height instead.
+            .frame(height: 220)
+
+            Divider()
+
+            VStack(spacing: 0) {
+                FooterRow(systemImage: "gearshape", title: "Settings…", action: onSettings)
+                FooterRow(systemImage: "power", title: "Quit monica", action: onQuit)
+            }
+        }
+        .frame(width: 300)
+        .onAppear { searchFocused = true }
+    }
+}
+
 /// `NSStatusItem` + `NSPopover`, templated on mactraffic's `StatusBarController`.
 /// The status item's title is the aggregate glyph (highest-priority status
-/// across all sessions) + a count; clicking it opens a popover with the full
-/// list.
+/// across all sessions) + a count; the popover (opened either by clicking the
+/// item or via the global hotkey — see `HotKeyManager`) holds search, the
+/// full agent list, and Settings/Quit.
 @MainActor
 final class MenuBarController {
     private let statusItem: NSStatusItem
     private let popover: NSPopover
     private let scanner: AgentScanner
-    private var observer: NSObjectProtocol?
+    private let model = AgentPickerModel()
+    private var titleTimer: Timer?
 
-    init(scanner: AgentScanner) {
+    init(scanner: AgentScanner, onOpenSettings: @escaping () -> Void) {
         self.scanner = scanner
-        self.statusItem = NSStatusBar.system.statusItem(withLength: 44)
+        self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.popover = NSPopover()
         popover.behavior = .transient
+        // Explicit size, matching mactraffic's `StatusBarController`. Without
+        // this, NSPopover has to guess a size from the hosted SwiftUI view
+        // before its first layout pass — that ambiguous guess is what caused
+        // the popover to anchor ~180pt below the status item instead of
+        // right beneath it (see AGENTS.md).
+        popover.contentSize = NSSize(width: 300, height: 320)
+
+        model.onCommit = { [weak self] session in
+            Switcher.activate(session, targetApp: AppSettings.shared.targetApp)
+            self?.closePopover()
+        }
+        model.onCancel = { [weak self] in self?.closePopover() }
 
         if let button = statusItem.button {
-            button.action = #selector(togglePopover(_:))
+            button.action = #selector(handleClick(_:))
             button.target = self
         }
 
-        rebuildContent()
-        updateTitle()
+        let content = MenuBarPopoverView(
+            model: model,
+            onSettings: { [weak self] in
+                self?.closePopover()
+                onOpenSettings()
+            },
+            onQuit: { NSApp.terminate(nil) }
+        )
+        popover.contentViewController = NSHostingController(rootView: content)
 
-        // AgentScanner is @MainActor + @Published, but there's no Combine
-        // import here — poll the title on the same cadence instead of
-        // subscribing, keeping this controller dependency-free.
-        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        updateTitle()
+        titleTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.updateTitle() }
         }
     }
 
+    @objc private func handleClick(_ sender: AnyObject?) {
+        togglePopover()
+    }
+
+    /// Called both from the status item click and from the global hotkey —
+    /// there's deliberately only one picker UI now, not a separate Spotlight
+    /// window.
+    func togglePopover() {
+        if popover.isShown {
+            closePopover()
+        } else {
+            openPopover()
+        }
+    }
+
+    private func openPopover() {
+        guard let button = statusItem.button else { return }
+        scanner.scan()
+        model.activate(sessions: scanner.sessions)
+        NSApp.activate(ignoringOtherApps: true)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+    }
+
+    private func closePopover() {
+        model.deactivate()
+        popover.performClose(nil)
+    }
+
+    /// One glyph per agent, colored by status — the same "at a glance" display
+    /// the old always-on HUD strip gave, now living directly in the menu bar
+    /// title instead of a separate floating window.
     private func updateTitle() {
         guard let button = statusItem.button else { return }
         let sessions = scanner.sessions
-        let aggregate = sessions.map(\.status).max() ?? .idle
-        let glyph = sessions.isEmpty ? "○" : aggregate.glyph
-        let title = sessions.isEmpty ? glyph : "\(glyph) \(sessions.count)"
-        let color: NSColor =
-            sessions.isEmpty
-            ? .secondaryLabelColor
-            : (aggregate == .working ? .systemGreen : aggregate == .waiting ? .systemYellow : .secondaryLabelColor)
-        button.attributedTitle = NSAttributedString(
-            string: title,
-            attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .medium),
-                .foregroundColor: color,
-            ]
-        )
-        rebuildContent()
-    }
+        let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .medium)
+        let title = NSMutableAttributedString()
 
-    private func rebuildContent() {
-        let content = AgentListView(sessions: scanner.sessions) { [weak self] session in
-            Switcher.activate(session, targetApp: AppSettings.shared.targetApp)
-            self?.popover.performClose(nil)
-        }
-        .frame(width: 280)
-        popover.contentViewController = NSHostingController(rootView: content)
-    }
-
-    @objc private func togglePopover(_ sender: AnyObject?) {
-        guard let button = statusItem.button else { return }
-        if popover.isShown {
-            popover.performClose(sender)
+        if sessions.isEmpty {
+            title.append(
+                NSAttributedString(
+                    string: "○", attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor]))
         } else {
-            rebuildContent()
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+            for (index, session) in sessions.enumerated() {
+                if index > 0 {
+                    title.append(NSAttributedString(string: " ", attributes: [.font: font]))
+                }
+                let color: NSColor =
+                    session.status == .working
+                    ? .systemGreen : session.status == .waiting ? .systemYellow : .secondaryLabelColor
+                title.append(
+                    NSAttributedString(
+                        string: session.status.glyph, attributes: [.font: font, .foregroundColor: color]))
+            }
+        }
+
+        button.attributedTitle = title
+        if popover.isShown {
+            model.sessions = sessions
         }
     }
 }

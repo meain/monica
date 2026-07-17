@@ -9,8 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var scanner: AgentScanner?
     private var hotKeyManager: HotKeyManager?
     private var menuBar: MenuBarController?
-    private var hud: HUDPanel?
-    private var spotlight: SpotlightController?
+    private var settingsWindow: SettingsWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenu()
@@ -20,22 +19,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hotKeyManager = HotKeyManager()
         self.hotKeyManager = hotKeyManager
 
-        menuBar = MenuBarController(scanner: scanner)
-        hud = HUDPanel(scanner: scanner)
-        spotlight = SpotlightController(scanner: scanner)
+        menuBar = MenuBarController(scanner: scanner) { [weak self] in
+            self?.showSettings()
+        }
 
         scanner.start(interval: AppSettings.shared.pollInterval)
-        hud?.setVisible(AppSettings.shared.hudEnabled)
+        registerHotKey()
+    }
 
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// There is deliberately only one picker UI: the global hotkey opens the
+    /// same menu bar popover a click would, rather than a separate Spotlight
+    /// window.
+    @MainActor
+    private func registerHotKey() {
+        guard let hotKeyManager else { return }
         hotKeyManager.register(
             keyCode: AppSettings.shared.hotKeyCode,
             modifiers: AppSettings.shared.hotKeyModifiers
         ) { [weak self] in
-            self?.spotlight?.toggle()
+            self?.menuBar?.togglePopover()
         }
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    @MainActor
+    private func showSettings() {
+        if settingsWindow == nil {
+            settingsWindow = SettingsWindowController(settings: AppSettings.shared) { [weak self] in
+                self?.registerHotKey()
+            }
+        }
+        settingsWindow?.show()
+    }
 
     /// A minimal menu so ⌘Q works even with no dock icon / visible window.
     private func setupMenu() {
