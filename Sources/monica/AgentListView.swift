@@ -33,7 +33,11 @@ struct AgentRowView: View {
                 .foregroundColor(.secondary)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 10)
+        // Matches MenuBarController's `horizontalInset` (12) so row text
+        // lines up with the search field and preview panel above/below it —
+        // this used to be 10 here *plus* another 4 from the list's own
+        // outer padding (14 total), visibly misaligned from those.
+        .padding(.horizontal, 12)
         .padding(.vertical, 4)
         .background(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
         .cornerRadius(6)
@@ -66,7 +70,7 @@ struct AgentListView: View {
                         .onTapGesture { onSelect(session) }
                 }
             }
-            .padding(4)
+            .padding(.vertical, 4)
         }
     }
 }

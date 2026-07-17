@@ -13,7 +13,7 @@ private struct FooterRow: View {
                 Text(title)
                 Spacer()
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .contentShape(Rectangle())
         }
@@ -27,8 +27,16 @@ private struct MenuBarPopoverView: View {
     let onQuit: () -> Void
     @FocusState private var searchFocused: Bool
 
+    /// Applied consistently to the search/compose field, the preview panel,
+    /// and (via `AgentRowView`) the list rows, so text in every section lines
+    /// up along the same left margin — they'd previously accumulated
+    /// different total insets (8pt here vs. 4+10=14pt for rows), which is
+    /// what "the padding is wrong" turned out to mean (confirmed via
+    /// screenshot).
+    private let horizontalInset: CGFloat = 12
+
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             if let target = model.composeTarget {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Message \(target.displayTitle)")
@@ -39,12 +47,16 @@ private struct MenuBarPopoverView: View {
                         .font(.system(size: 14))
                         .focused($searchFocused)
                 }
-                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, horizontalInset)
+                .padding(.vertical, 8)
             } else {
                 TextField("Search agents…", text: $model.filterText)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
-                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, horizontalInset)
+                    .padding(.vertical, 8)
                     .focused($searchFocused)
             }
 
@@ -90,13 +102,15 @@ private struct MenuBarPopoverView: View {
                         // alone — it can propose an unbounded width, so the
                         // text stays on one line and blows out the
                         // popover's overall width. A genuine fixed width
-                        // forces real wrapping.
-                        .frame(width: 384, alignment: .leading)
+                        // forces real wrapping. 400 (popover width) minus
+                        // horizontalInset on both sides.
+                        .frame(width: 400 - horizontalInset * 2, alignment: .leading)
                         .textSelection(.enabled)
                     }
                     .frame(height: 90)
                 }
-                .padding(8)
+                .padding(.horizontal, horizontalInset)
+                .padding(.vertical, 8)
             }
 
             Divider()
