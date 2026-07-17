@@ -21,6 +21,22 @@ final class AgentPickerModel: ObservableObject {
     @Published var composeTarget: AgentSession?
     @Published var composeText: String = ""
 
+    /// Bumped whenever the text field should (re-)claim keyboard focus.
+    /// `@FocusState` set from `.onAppear` alone is a race against the
+    /// popover's window actually becoming key — `MenuBarController` bumps
+    /// this again once it has confirmed `makeKey()` happened.
+    @Published var focusTick = 0
+    func requestFocus() { focusTick += 1 }
+
+    /// Swapping `composeTarget` swaps which `TextField` is in the view tree
+    /// (search field <-> message field) — bumping focus in the *same* render
+    /// pass as that swap races SwiftUI's diffing and can land on the field
+    /// that's about to be removed. Deferring one run-loop tick lets the new
+    /// field exist first.
+    private func requestFocusNextTick() {
+        DispatchQueue.main.async { [weak self] in self?.requestFocus() }
+    }
+
     var filteredSessions: [AgentSession] {
         guard !filterText.isEmpty else { return sessions }
         return sessions.filter {
@@ -82,11 +98,13 @@ final class AgentPickerModel: ObservableObject {
         guard list.indices.contains(selection) else { return }
         composeTarget = list[selection]
         composeText = ""
+        requestFocusNextTick()
     }
 
     private func cancelCompose() {
         composeTarget = nil
         composeText = ""
+        requestFocusNextTick()
     }
 
     private func sendComposedMessage() {

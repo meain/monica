@@ -78,7 +78,7 @@ private struct MenuBarPopoverView: View {
         }
         .frame(width: 300)
         .onAppear { searchFocused = true }
-        .onChange(of: model.composeTarget) { searchFocused = true }
+        .onChange(of: model.focusTick) { searchFocused = true }
     }
 }
 
@@ -160,6 +160,15 @@ final class MenuBarController {
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
+
+        // `.onAppear`'s `searchFocused = true` races the window actually
+        // becoming key — that assignment can get silently dropped if it
+        // lands before `makeKey()` has taken effect. Retry once the run
+        // loop has caught up, after re-confirming key status.
+        DispatchQueue.main.async { [weak self] in
+            self?.popover.contentViewController?.view.window?.makeKey()
+            self?.model.requestFocus()
+        }
     }
 
     private func closePopover() {
