@@ -1,12 +1,21 @@
 import Foundation
 
 private struct AIStatusFile: Decodable {
-  var session_id: String?
+  var sessionId: String?
   var pid: Int?
   var status: String?
-  var hook_event: String?
+  var hookEvent: String?
   var project: String?
   var timestamp: Double?
+
+  enum CodingKeys: String, CodingKey {
+    case sessionId = "session_id"
+    case pid
+    case status
+    case hookEvent = "hook_event"
+    case project
+    case timestamp
+  }
 }
 
 /// Ports `,tmux-agent-scan` + the aistatus lookup from `,tmux-ai-agents` natively,
@@ -163,6 +172,6 @@ final class AgentScanner: ObservableObject {
 
     let status = AgentStatus(rawValue: parsed.status ?? "idle") ?? .idle
     let project = parsed.project ?? (fallbackPath as NSString).lastPathComponent
-    return (status, project, Date(timeIntervalSince1970: ts), parsed.session_id)
+    return (status, project, Date(timeIntervalSince1970: ts), parsed.sessionId)
   }
 }

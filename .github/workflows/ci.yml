@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint (swift-format)
+        run: make lint
+
+      - name: Build (debug)
+        run: make build
+
+      - name: Build app bundle (release)
+        run: make app

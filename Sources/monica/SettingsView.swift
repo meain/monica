@@ -194,7 +194,9 @@ struct SettingsView: View {
   }
 
   private func openDocs() {
-    guard let url = URL(string: "https://github.com/meain/monica/blob/main/docs.md") else { return }
+    guard let url = URL(string: "https://github.com/meain/monica/blob/master/docs.md") else {
+      return
+    }
     NSWorkspace.shared.open(url)
   }
 
