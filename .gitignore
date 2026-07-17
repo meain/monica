@@ -1,0 +1,6 @@
+.build/
+monica.app/
+*.swiftpm
+.DS_Store
+monica.app.zip
+.direnv/
