@@ -7,6 +7,7 @@ struct AgentRowView: View {
     let isSelected: Bool
 
     private var glyphColor: Color {
+        guard !session.isStale else { return .secondary }
         switch session.status {
         case .working: return .green
         case .waiting: return .yellow
@@ -16,28 +17,34 @@ struct AgentRowView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(session.status.glyph)
+            Text(session.displayGlyph)
                 .foregroundColor(glyphColor)
                 .frame(width: 14)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(session.displayTitle)
-                    .font(.system(size: 13, weight: .medium))
-                Text(session.displaySubtitle)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-            }
-            Spacer()
+            Text(session.displayTitle)
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(1)
+            Text(session.displaySubtitle)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
             Text(session.lastUpdatedDisplay)
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
+                .lineLimit(1)
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .background(isSelected ? Color.accentColor.opacity(0.18) : Color.clear)
         .cornerRadius(6)
         .contentShape(Rectangle())
     }
 }
+
+/// One row's height including its vertical padding — used by
+/// `MenuBarController` to size the list to its actual content rather than
+/// always reserving max space.
+let agentRowHeight: CGFloat = 26
 
 /// The shared list body: an empty-state message, or one `AgentRowView` per
 /// session with click-to-select.

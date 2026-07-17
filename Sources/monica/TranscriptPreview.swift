@@ -11,10 +11,13 @@ import Foundation
 /// `~/.dotfiles/claude/.claude/hooks/notify-summary.sh`'s own extraction
 /// (search backward for the last assistant message, join its `text` blocks).
 ///
-/// pi: `~/.pi/agent/sessions/<"-" + cwd.replacingOccurrences(of: "/", with: "-") + "-->/<timestamp>_<sessionId>/**/session.jsonl`
-/// (nested under a per-run directory — pi supports branching resumes, so
-/// there can be more than one `session.jsonl`; this uses the most recently
-/// modified one). Each line has `message.role`/`message.content` with block
+/// pi: `~/.pi/agent/sessions/<"-" + cwd.replacingOccurrences(of: "/", with: "-") + "--">/`,
+/// then either a flat `<timestamp>_<sessionId>.jsonl` file directly in that
+/// directory (the common case), or — for sessions that got resumed/branched —
+/// a `<timestamp>_<sessionId>` *directory* holding nested
+/// `<hash>/run-N/session.jsonl` files instead, in which case the most
+/// recently modified one is used. Confirmed both shapes exist side by side on
+/// this machine. Each line has `message.role`/`message.content` with block
 /// types `text`/`thinking`/`toolCall`. Best-effort: pi's format is a
 /// branching id/parentId tree (see https://pi.dev/docs/latest/session-format)
 /// and this deliberately ignores branches, just reading file order.
@@ -93,11 +96,22 @@ enum TranscriptPreview {
 
     /// pi nests a run under `<timestamp>_<sessionId>/<hash>/run-N/session.jsonl`
     /// and can have multiple runs (resumes) — pick whichever `session.jsonl`
-    /// was written to most recently.
+    /// was written to most recently. Most sessions are a flat
+    /// `<timestamp>_<sessionId>.jsonl` file directly in the project
+    /// directory; some (resumed/branched ones) are instead a
+    /// `<timestamp>_<sessionId>` *directory* holding nested
+    /// `<hash>/run-N/session.jsonl` files — confirmed both shapes exist side
+    /// by side on this machine, so both must be handled.
     private static func latestPiSessionFile(under projectDir: URL, sessionId: String) -> URL? {
         let fm = FileManager.default
-        guard let topLevel = try? fm.contentsOfDirectory(at: projectDir, includingPropertiesForKeys: nil),
-            let sessionDir = topLevel.first(where: { $0.lastPathComponent.hasSuffix("_\(sessionId)") }),
+        guard let topLevel = try? fm.contentsOfDirectory(at: projectDir, includingPropertiesForKeys: nil)
+        else { return nil }
+
+        if let flatFile = topLevel.first(where: { $0.lastPathComponent.hasSuffix("_\(sessionId).jsonl") }) {
+            return flatFile
+        }
+
+        guard let sessionDir = topLevel.first(where: { $0.lastPathComponent.hasSuffix("_\(sessionId)") }),
             let enumerator = fm.enumerator(
                 at: sessionDir, includingPropertiesForKeys: [.contentModificationDateKey])
         else { return nil }

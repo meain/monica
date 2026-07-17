@@ -18,7 +18,6 @@ final class AgentScanner: ObservableObject {
     private var timer: Timer?
     private let statusDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".local/share/aistatus")
-    private let staleInterval: TimeInterval = 7200
 
     func start(interval: TimeInterval = 2.0) {
         scan()
@@ -140,12 +139,17 @@ final class AgentScanner: ObservableObject {
 
     // MARK: - aistatus lookup
 
+    /// No age cutoff here (unlike `,tmux-ai-agents`'s 2h `STALE_SECS`,
+    /// which just falls back to a plain "idle" once a file is old) — the pid
+    /// tree scan already guarantees this pid is a still-live process, so an
+    /// old timestamp is a meaningful "hasn't updated in a while" signal, not
+    /// stale/wrong data. `AgentSession.isStale` (>3h) decides how that's
+    /// drawn, at the display layer, not here.
     private func lookupStatus(pid: Int32, fallbackPath: String) -> (AgentStatus, String, Date?, String?) {
         let file = statusDir.appendingPathComponent("pid-\(pid).json")
         guard let data = try? Data(contentsOf: file),
             let parsed = try? JSONDecoder().decode(AIStatusFile.self, from: data),
-            let ts = parsed.timestamp,
-            Date().timeIntervalSince1970 - ts <= staleInterval
+            let ts = parsed.timestamp
         else {
             return (.idle, (fallbackPath as NSString).lastPathComponent, nil, nil)
         }

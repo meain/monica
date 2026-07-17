@@ -60,4 +60,21 @@ struct AgentSession: Identifiable, Equatable {
         if elapsed < 3600 { return "\(elapsed / 60)m ago" }
         return "\(elapsed / 3600)h ago"
     }
+
+    private static let staleThreshold: TimeInterval = 3 * 3600
+
+    /// True once a *known* last-update timestamp is more than 3h old — not
+    /// when it's `nil` (no status file yet is "unknown", not "stale").
+    /// Doesn't change `status` itself, just how it's drawn (see
+    /// `displayGlyph`) — the underlying pid is still confirmed live by the
+    /// pid-tree scan either way.
+    var isStale: Bool {
+        guard let lastUpdated else { return false }
+        return Date().timeIntervalSince(lastUpdated) > AgentSession.staleThreshold
+    }
+
+    /// A dotted circle for agents that haven't updated their status in over
+    /// 3h, regardless of what that stale `status` value says — otherwise the
+    /// normal status glyph.
+    var displayGlyph: String { isStale ? "◌" : status.glyph }
 }

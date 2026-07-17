@@ -30,6 +30,11 @@ final class AgentPickerModel: ObservableObject {
     @Published var composeTarget: AgentSession?
     @Published var composeText: String = ""
 
+    /// Height of the scrollable agent list, computed by `MenuBarController`
+    /// from the active screen's height each time the popover opens (capped
+    /// at 60% of it) rather than a small fixed value.
+    @Published var listHeight: CGFloat = 150
+
     /// Bumped whenever the text field should (re-)claim keyboard focus.
     /// `@FocusState` set from `.onAppear` alone is a race against the
     /// popover's window actually becoming key — `MenuBarController` bumps

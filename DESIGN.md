@@ -13,6 +13,16 @@ item or via the global hotkey. The HUD strip added visual clutter for no real be
 over the menu bar title glyph, and a second picker UI was redundant once the popover had
 search. See "Decisions made during planning" for what changed and why.
 
+**v1.2 note:** real usage surfaced several polish items, all folded into the same
+popover: single-line rows (was two lines) in a wider popover so more fits at once; the
+list sizes itself to how many agents are actually showing rather than always reserving
+its old fixed height, capped at 60% of the screen height for when there are a lot;
+arrow-key selection scrolls into view; a distinct `◌` glyph for agents that haven't
+updated their status in 3h+; the message preview renders as markdown; a "Quickstart"
+section in Settings; and the app displays as "Monica" (capitalized) rather than lowercase
+`monica` everywhere the UI shows its name (the package/binary/bundle-file name stay
+lowercase — see "File layout").
+
 ## Problem
 
 `,tmux-ai-agents` already does this well inside tmux (`M-'` → fzf popup → pick an agent
@@ -145,6 +155,15 @@ title instead of a separate window. `AgentStatus`'s `Comparable` conformance
 (`working > waiting > idle`) is used elsewhere (e.g. sort order) but no longer collapses
 the title to a single aggregate glyph.
 
+One more glyph on top of those three: `◌` (dotted circle) for any agent whose
+`lastUpdated` is more than 3h old, *regardless* of what its stale `status` value says —
+a `waiting`/`working` status from 5 hours ago is more likely a dead/abandoned session
+than a real one still wanting attention. This is a display-layer decision
+(`AgentSession.isStale`/`displayGlyph`) — `AgentScanner` itself no longer discards
+old-but-real timestamps the way `,tmux-ai-agents`' 2h `STALE_SECS` cutoff does, since the
+pid-tree scan already guarantees the pid is still a live process (see
+`AgentScanner.lookupStatus`'s doc comment).
+
 ### Switching, precisely
 
 `,tmux-ai-agents` gets away with a bare `tmux switch-client -t <target>` because it
@@ -183,13 +202,18 @@ file directly, keyed by that `session_id`:
   type `text`/`thinking`/`tool_use`). This is the exact same file and the exact same
   "search backward for the last assistant message's text blocks" logic
   `notify-summary.sh` already uses.
-- **pi**: `~/.pi/agent/sessions/<"-" + cwd.replacingOccurrences(of: "/", with: "-") + "-->/<timestamp>_<sessionId>/**/session.jsonl`.
-  pi's session format ([pi.dev/docs/latest/session-format](https://pi.dev/docs/latest/session-format))
-  is a branching id/parentId tree across possibly multiple `run-N` directories (resumes)
-  — this is best-effort: it picks the most-recently-modified `session.jsonl` under the
-  session directory and just reads file order, ignoring branches.
+- **pi**: `~/.pi/agent/sessions/<"-" + cwd.replacingOccurrences(of: "/", with: "-") + "-->/`,
+  then either a flat `<timestamp>_<sessionId>.jsonl` file directly in that directory (the
+  common case — confirmed on this machine that *most* sessions are stored this way), or
+  — for sessions that got resumed/branched — a `<timestamp>_<sessionId>` *directory*
+  holding nested `<hash>/run-N/session.jsonl` files instead. Both shapes were found side
+  by side on this machine; `latestPiSessionFile` checks the flat file first, falling back
+  to the most-recently-modified nested one. pi's session format
+  ([pi.dev/docs/latest/session-format](https://pi.dev/docs/latest/session-format)) is
+  overall a branching id/parentId tree — this is best-effort and just reads file order,
+  ignoring branches.
 
-Both encodings were reverse-engineered empirically (directory names on this machine)
+Both directory-name encodings were reverse-engineered empirically (directory names on this machine)
 and cross-checked against public documentation — see `TranscriptPreview.swift`'s doc
 comment for the exact rules. Only the tail of the transcript (last ~200KB) is read, to
 avoid loading a long-running session's multi-MB file into memory just to preview it.
@@ -198,6 +222,23 @@ Only `AgentPickerModel.previewText` for the *currently selected* row is computed
 selection change and on each scan refresh while the popover is open) — not all rows at
 once, since it's synchronous file I/O on the main thread. Cheap enough for a single
 tail-read per change; would need to move to a background queue if that ever changes.
+
+The preview renders as markdown (`MarkdownPreviewText`, backed by SwiftUI's native
+`AttributedString(markdown:)` with `.full` block-syntax parsing) rather than plain text,
+since Claude Code/pi assistant messages usually *are* markdown. This is deliberately
+lighter than beacon's full custom markdown engine (`MarkdownParser`/`MarkdownView`/
+`SyntaxHighlighter`) — bold/italic/links/lists/headings render, but fenced code blocks
+don't get syntax highlighting (just plain text). Acceptable for a small preview panel;
+would need beacon's approach ported over if that becomes the primary content surface.
+
+### Sizing: content-driven, not always maximal
+
+The popover was originally a small fixed size, then briefly *always* sized to 60% of
+the screen height regardless of agent count (per an early version of this feature) —
+both wrong in different ways. `MenuBarController.resizeForScreen()` instead sizes the
+list to how many agents are actually showing (`rowCount * agentRowHeight`), only
+clamping at 60% of the screen height as a ceiling for when there are a lot. Recomputed
+on every `openPopover()` since the agent count can change between opens.
 
 ## File layout
 
@@ -218,11 +259,12 @@ monica/
     HotKeyManager.swift            # Carbon global hotkey registration
     HotKeyFormatter.swift           # keyCode+modifiers -> display label ("⌃⌥⇧A")
     KeyRecorderView.swift            # hotkey re-recording control, used in Settings
-    AgentListView.swift               # shared SwiftUI row/list view
+    AgentListView.swift               # shared SwiftUI row/list view, agentRowHeight constant
     AgentPickerModel.swift             # popover search + keyboard nav + compose + preview state
     TranscriptPreview.swift             # reads last message from each agent's own transcript
-    MenuBarController.swift              # NSStatusItem + popover (search, list, preview, footer)
-    SettingsView.swift                    # SettingsView + SettingsWindowController
+    MarkdownPreviewText.swift            # renders preview text as markdown
+    MenuBarController.swift               # NSStatusItem + popover (search, list, preview, footer)
+    SettingsView.swift                     # SettingsView (+ Quickstart) + SettingsWindowController
 ```
 
 ## Build / run

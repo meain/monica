@@ -50,17 +50,22 @@ private struct MenuBarPopoverView: View {
 
             Divider()
 
-            ScrollView {
-                AgentListView(
-                    sessions: model.filteredSessions,
-                    selection: model.selection,
-                    onSelect: model.choose
-                )
+            ScrollViewReader { proxy in
+                ScrollView {
+                    AgentListView(
+                        sessions: model.filteredSessions,
+                        selection: model.selection,
+                        onSelect: model.choose
+                    )
+                }
+                // A `maxHeight` alone reports zero ideal height to the hosting
+                // popover — same ScrollView gotcha noted in AGENTS.md. Use a
+                // real height instead — `MenuBarController` computes this
+                // from the screen size (up to 60% of it) each time the
+                // popover opens, rather than a small fixed value.
+                .frame(height: model.listHeight)
+                .onChange(of: model.selection) { scrollToSelection(proxy) }
             }
-            // A `maxHeight` alone reports zero ideal height to the hosting
-            // popover — same ScrollView gotcha noted in AGENTS.md. Use a real
-            // fixed height instead.
-            .frame(height: 150)
 
             if model.composeTarget == nil {
                 Text("↩ switch  ·  ⌘↩ send message")
@@ -75,17 +80,19 @@ private struct MenuBarPopoverView: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.secondary)
                     ScrollView {
-                        Text(model.previewText.isEmpty ? "No active AI agents" : model.previewText)
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                            // `ScrollView` doesn't reliably constrain a
-                            // `Text`'s wrapping width from `maxWidth:
-                            // .infinity` alone — it can propose an unbounded
-                            // width, so the text stays on one line and blows
-                            // out the popover's overall width. A genuine
-                            // fixed width forces real wrapping.
-                            .frame(width: 304, alignment: .leading)
-                            .textSelection(.enabled)
+                        MarkdownPreviewText(
+                            raw: model.previewText.isEmpty ? "No active AI agents" : model.previewText
+                        )
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        // `ScrollView` doesn't reliably constrain a
+                        // `Text`'s wrapping width from `maxWidth: .infinity`
+                        // alone — it can propose an unbounded width, so the
+                        // text stays on one line and blows out the
+                        // popover's overall width. A genuine fixed width
+                        // forces real wrapping.
+                        .frame(width: 384, alignment: .leading)
+                        .textSelection(.enabled)
                     }
                     .frame(height: 90)
                 }
@@ -96,20 +103,26 @@ private struct MenuBarPopoverView: View {
 
             VStack(spacing: 0) {
                 FooterRow(systemImage: "gearshape", title: "Settings…", action: onSettings)
-                FooterRow(systemImage: "power", title: "Quit monica", action: onQuit)
+                FooterRow(systemImage: "power", title: "Quit Monica", action: onQuit)
             }
         }
-        .frame(width: 320)
+        .frame(width: 400)
         .onAppear { searchFocused = true }
         .onChange(of: model.focusTick) { searchFocused = true }
+    }
+
+    private func scrollToSelection(_ proxy: ScrollViewProxy) {
+        let list = model.filteredSessions
+        guard list.indices.contains(model.selection) else { return }
+        withAnimation { proxy.scrollTo(list[model.selection].id, anchor: .center) }
     }
 }
 
 /// `NSStatusItem` + `NSPopover`, templated on mactraffic's `StatusBarController`.
-/// The status item's title is the aggregate glyph (highest-priority status
-/// across all sessions) + a count; the popover (opened either by clicking the
-/// item or via the global hotkey — see `HotKeyManager`) holds search, the
-/// full agent list, and Settings/Quit.
+/// The status item's title shows one glyph per agent; the popover (opened
+/// either by clicking the item or via the global hotkey — see
+/// `HotKeyManager`) holds search, the full agent list, a message preview,
+/// and Settings/Quit.
 @MainActor
 final class MenuBarController {
     private let statusItem: NSStatusItem
@@ -128,7 +141,7 @@ final class MenuBarController {
         // before its first layout pass — that ambiguous guess is what caused
         // the popover to anchor ~180pt below the status item instead of
         // right beneath it (see AGENTS.md).
-        popover.contentSize = NSSize(width: 320, height: 400)
+        popover.contentSize = NSSize(width: 400, height: 300)
 
         model.onCommit = { [weak self] session in
             Switcher.activate(session, targetApp: AppSettings.shared.targetApp)
@@ -180,6 +193,7 @@ final class MenuBarController {
         guard let button = statusItem.button else { return }
         scanner.scan()
         model.activate(sessions: scanner.sessions)
+        resizeForScreen()
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
@@ -197,6 +211,24 @@ final class MenuBarController {
     private func closePopover() {
         model.deactivate()
         popover.performClose(nil)
+    }
+
+    /// Sizes the list to how many agents are actually showing, not always to
+    /// the maximum — only clamped by 60% of the active screen's height for
+    /// when there are a lot of them. `fixedChrome` is a rough estimate of
+    /// everything in the popover besides the scrollable list (search field,
+    /// hint row, preview panel, footer, dividers) — `NSPopover.contentSize`
+    /// is itself just a hint (see AGENTS.md), so this doesn't need to be
+    /// exact.
+    private func resizeForScreen() {
+        let screenHeight = NSScreen.main?.visibleFrame.height ?? 800
+        let fixedChrome: CGFloat = 240
+        let maxListHeight = max(agentRowHeight, screenHeight * 0.6 - fixedChrome)
+        let rowCount = max(model.filteredSessions.count, 1)
+        let desiredListHeight = CGFloat(rowCount) * agentRowHeight + 8
+        let listHeight = min(desiredListHeight, maxListHeight)
+        model.listHeight = listHeight
+        popover.contentSize = NSSize(width: 400, height: fixedChrome + listHeight)
     }
 
     /// One glyph per agent, colored by status — the same "at a glance" display
@@ -218,11 +250,13 @@ final class MenuBarController {
                     title.append(NSAttributedString(string: " ", attributes: [.font: font]))
                 }
                 let color: NSColor =
-                    session.status == .working
-                    ? .systemGreen : session.status == .waiting ? .systemYellow : .secondaryLabelColor
+                    session.isStale
+                    ? .secondaryLabelColor
+                    : (session.status == .working
+                        ? .systemGreen : session.status == .waiting ? .systemYellow : .secondaryLabelColor)
                 title.append(
                     NSAttributedString(
-                        string: session.status.glyph, attributes: [.font: font, .foregroundColor: color]))
+                        string: session.displayGlyph, attributes: [.font: font, .foregroundColor: color]))
             }
         }
 

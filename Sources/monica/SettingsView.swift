@@ -8,6 +8,18 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("Quickstart") {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Click the menu bar icon, or press the hotkey below, to open the picker.")
+                    Text("Type to filter, ↑↓ to move, ↩ to switch to an agent's pane.")
+                    Text("⌘↩ instead sends a message to the pane without switching to it.")
+                    Text("▶ working   ● waiting   ○ idle   ◌ idle for over 3 hours")
+                        .font(.system(.caption, design: .monospaced))
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+
             Section("Switch target") {
                 HStack {
                     TextField("App name", text: $settings.targetApp)
@@ -52,7 +64,7 @@ final class SettingsWindowController: NSWindowController {
         let view = SettingsView(settings: settings, onHotKeyChanged: onHotKeyChanged)
         let hosting = NSHostingController(rootView: view)
         let window = NSWindow(contentViewController: hosting)
-        window.title = "monica Settings"
+        window.title = "Monica Settings"
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
         self.init(window: window)
