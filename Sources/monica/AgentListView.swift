@@ -27,6 +27,9 @@ struct AgentRowView: View {
                     .foregroundColor(.secondary)
             }
             Spacer()
+            Text(session.lastUpdatedDisplay)
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)

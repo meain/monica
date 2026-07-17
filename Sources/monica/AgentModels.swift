@@ -44,4 +44,16 @@ struct AgentSession: Identifiable, Equatable {
 
     var displayTitle: String { "\(session)/\(project)" }
     var displaySubtitle: String { "\(windowName) · \(agentName)" }
+
+    /// Same "Ns ago" / "Nm ago" / "Nh ago" thresholds `,tmux-ai-agents` uses
+    /// for its TS_DISPLAY column. Computed live (not cached) so it stays
+    /// accurate for as long as a row stays on screen between scans.
+    var lastUpdatedDisplay: String {
+        guard let lastUpdated else { return "-" }
+        let elapsed = Int(Date().timeIntervalSince(lastUpdated))
+        if elapsed < 0 { return "-" }
+        if elapsed < 60 { return "\(elapsed)s ago" }
+        if elapsed < 3600 { return "\(elapsed / 60)m ago" }
+        return "\(elapsed / 3600)h ago"
+    }
 }
