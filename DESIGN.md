@@ -23,6 +23,19 @@ section in Settings; and the app displays as "Monica" (capitalized) rather than 
 `monica` everywhere the UI shows its name (the package/binary/bundle-file name stay
 lowercase — see "File layout").
 
+**v1.3 note:** fixing v1.2's polish items piecemeal (padding, then a scrollbar-shift
+issue, then a redundant hint row) kept surfacing the same root cause — the popover's
+view code was one large monolithic `body` in `MenuBarController.swift` with ad-hoc
+padding literals per section. Refactored into `PopoverLayout.swift` (shared width/inset
+constants + a `popoverSection()` modifier) and `MenuBarPopoverView.swift` (one small
+`View` struct per section), with `MenuBarController.swift` trimmed back to pure
+`NSStatusItem`/`NSPopover` mechanics. The redundant "↩ switch · ⌘↩ send message" hint
+row was also dropped from the popover — it's covered by Settings' Quickstart section
+now. Settings itself got the same "Quickstart" treatment noted above but needed a
+follow-up fix (see "Settings window sizing"). The scrollbar-shift issue's first fix
+(`.scrollIndicators(.hidden)`) turned out to be incomplete — see "Scrollbars:
+`.scrollIndicators(.hidden)` isn't enough".
+
 ## Problem
 
 `,tmux-ai-agents` already does this well inside tmux (`M-'` → fzf popup → pick an agent
@@ -249,6 +262,40 @@ list to how many agents are actually showing (`rowCount * agentRowHeight`), only
 clamping at 60% of the screen height as a ceiling for when there are a lot. Recomputed
 on every `openPopover()` since the agent count can change between opens.
 
+### Settings window sizing
+
+`SettingsView` uses `Form { ... }.formStyle(.grouped)` for the boxed-section look (like
+System Settings.app) instead of the original plain `Form`. That style change broke
+`NSWindow(contentViewController:)`'s auto-sizing — the window collapsed to ~32pt tall
+(just the titlebar, no content at all), confirmed via a real screenshot, not a compiler
+warning. The plain-style Form had auto-sized correctly; `.formStyle(.grouped)` apparently
+doesn't report a usable ideal height the same way. Fixed with an explicit
+`.frame(width: 460, height: 640)` — tall enough that all four sections fit without the
+Form's internal List needing to scroll at all (an earlier, shorter guess at the height
+still left it scrolling, just with a hidden-but-functional scrollbar — see below).
+
+### Scrollbars: `.scrollIndicators(.hidden)` isn't enough
+
+Both the "Last message" preview panel and (potentially, if content ever overflows)
+Settings' grouped `Form` showed a persistent scrollbar thumb *despite*
+`.scrollIndicators(.hidden)` being applied — confirmed via a real screenshot, not
+something that shows up any other way. Root cause: that modifier only controls SwiftUI's
+newer overlay-indicator API. Once content actually overflows under a non-overlay-style
+scrollbar (`defaults read NSGlobalDomain AppleShowScrollBars` — "Always"/"WhenScrolling",
+or "Automatic" once scrolling happens), AppKit still attaches a classic `NSScroller` to
+the underlying `NSScrollView`, which SwiftUI's modifier doesn't override. That legacy
+scroller is also what reserves layout width and shifts content when it appears/
+disappears — the original "everything gets thrown out of whack" complaint that
+`.scrollIndicators(.hidden)` was meant to fix in the first place.
+`ScrollbarSuppressor.swift` (an `NSViewRepresentable` embedded as
+`.background(ScrollbarSuppressor())` on the scrollable *content*, not the `ScrollView`
+itself) walks up to the real `NSScrollView` and sets `hasVerticalScroller`/
+`hasHorizontalScroller = false` and `scrollerStyle = .overlay` directly — that's the
+authoritative state `.scrollIndicators(.hidden)` doesn't fully control. Used in both
+`AgentListSection`/`LastMessageSection` (`MenuBarPopoverView.swift`) and the Quickstart
+section of `SettingsView` (any `.formStyle(.grouped)` `Form` is List-backed and has the
+same issue).
+
 ## File layout
 
 ```
@@ -272,8 +319,11 @@ monica/
     AgentPickerModel.swift             # popover search + keyboard nav + compose + preview state
     TranscriptPreview.swift             # reads last message from each agent's own transcript
     MarkdownPreviewText.swift            # renders preview text as markdown
-    MenuBarController.swift               # NSStatusItem + popover (search, list, preview, footer)
-    SettingsView.swift                     # SettingsView (+ Quickstart) + SettingsWindowController
+    PopoverLayout.swift                   # shared width/inset constants + popoverSection() modifier
+    ScrollbarSuppressor.swift              # NSViewRepresentable forcing overlay/hidden scrollers
+    MenuBarPopoverView.swift                # popover SwiftUI content, one View struct per section
+    MenuBarController.swift                  # NSStatusItem + NSPopover mechanics only, no view code
+    SettingsView.swift                        # SettingsView (+ Quickstart) + SettingsWindowController
 ```
 
 ## Build / run

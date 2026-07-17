@@ -1,142 +1,13 @@
 import AppKit
 import SwiftUI
 
-private struct FooterRow: View {
-    let systemImage: String
-    let title: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack {
-                Image(systemName: systemImage)
-                Text(title)
-                Spacer()
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct MenuBarPopoverView: View {
-    @ObservedObject var model: AgentPickerModel
-    let onSettings: () -> Void
-    let onQuit: () -> Void
-    @FocusState private var searchFocused: Bool
-
-    /// Applied consistently to the search/compose field, the preview panel,
-    /// and (via `AgentRowView`) the list rows, so text in every section lines
-    /// up along the same left margin — they'd previously accumulated
-    /// different total insets (8pt here vs. 4+10=14pt for rows), which is
-    /// what "the padding is wrong" turned out to mean (confirmed via
-    /// screenshot).
-    private let horizontalInset: CGFloat = 12
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let target = model.composeTarget {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Message \(target.displayTitle)")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    TextField("Type and press Return to send…", text: $model.composeText)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .focused($searchFocused)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, horizontalInset)
-                .padding(.vertical, 8)
-            } else {
-                TextField("Search agents…", text: $model.filterText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, horizontalInset)
-                    .padding(.vertical, 8)
-                    .focused($searchFocused)
-            }
-
-            Divider()
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    AgentListView(
-                        sessions: model.filteredSessions,
-                        selection: model.selection,
-                        onSelect: model.choose
-                    )
-                }
-                // A `maxHeight` alone reports zero ideal height to the hosting
-                // popover — same ScrollView gotcha noted in AGENTS.md. Use a
-                // real height instead — `MenuBarController` computes this
-                // from the screen size (up to 60% of it) each time the
-                // popover opens, rather than a small fixed value.
-                .frame(height: model.listHeight)
-                .onChange(of: model.selection) { scrollToSelection(proxy) }
-            }
-
-            if model.composeTarget == nil {
-                Text("↩ switch  ·  ⌘↩ send message")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-                    .padding(.vertical, 4)
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Last message")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.secondary)
-                    ScrollView {
-                        MarkdownPreviewText(
-                            raw: model.previewText.isEmpty ? "No active AI agents" : model.previewText
-                        )
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                        // `ScrollView` doesn't reliably constrain a
-                        // `Text`'s wrapping width from `maxWidth: .infinity`
-                        // alone — it can propose an unbounded width, so the
-                        // text stays on one line and blows out the
-                        // popover's overall width. A genuine fixed width
-                        // forces real wrapping. 400 (popover width) minus
-                        // horizontalInset on both sides.
-                        .frame(width: 400 - horizontalInset * 2, alignment: .leading)
-                        .textSelection(.enabled)
-                    }
-                    .frame(height: 90)
-                }
-                .padding(.horizontal, horizontalInset)
-                .padding(.vertical, 8)
-            }
-
-            Divider()
-
-            VStack(spacing: 0) {
-                FooterRow(systemImage: "gearshape", title: "Settings…", action: onSettings)
-                FooterRow(systemImage: "power", title: "Quit Monica", action: onQuit)
-            }
-        }
-        .frame(width: 400)
-        .onAppear { searchFocused = true }
-        .onChange(of: model.focusTick) { searchFocused = true }
-    }
-
-    private func scrollToSelection(_ proxy: ScrollViewProxy) {
-        let list = model.filteredSessions
-        guard list.indices.contains(model.selection) else { return }
-        withAnimation { proxy.scrollTo(list[model.selection].id, anchor: .center) }
-    }
-}
-
 /// `NSStatusItem` + `NSPopover`, templated on mactraffic's `StatusBarController`.
 /// The status item's title shows one glyph per agent; the popover (opened
 /// either by clicking the item or via the global hotkey — see
 /// `HotKeyManager`) holds search, the full agent list, a message preview,
-/// and Settings/Quit.
+/// and Settings/Quit. All SwiftUI view code lives in `MenuBarPopoverView.swift`
+/// — this file is purely the AppKit/NSPopover mechanics and `AgentScanner`
+/// glue.
 @MainActor
 final class MenuBarController {
     private let statusItem: NSStatusItem
@@ -155,7 +26,7 @@ final class MenuBarController {
         // before its first layout pass — that ambiguous guess is what caused
         // the popover to anchor ~180pt below the status item instead of
         // right beneath it (see AGENTS.md).
-        popover.contentSize = NSSize(width: 400, height: 300)
+        popover.contentSize = NSSize(width: PopoverLayout.width, height: 300)
 
         model.onCommit = { [weak self] session in
             Switcher.activate(session, targetApp: AppSettings.shared.targetApp)
@@ -231,18 +102,17 @@ final class MenuBarController {
     /// the maximum — only clamped by 60% of the active screen's height for
     /// when there are a lot of them. `fixedChrome` is a rough estimate of
     /// everything in the popover besides the scrollable list (search field,
-    /// hint row, preview panel, footer, dividers) — `NSPopover.contentSize`
-    /// is itself just a hint (see AGENTS.md), so this doesn't need to be
-    /// exact.
+    /// preview panel, footer, dividers) — `NSPopover.contentSize` is itself
+    /// just a hint (see AGENTS.md), so this doesn't need to be exact.
     private func resizeForScreen() {
         let screenHeight = NSScreen.main?.visibleFrame.height ?? 800
-        let fixedChrome: CGFloat = 240
+        let fixedChrome: CGFloat = 220
         let maxListHeight = max(agentRowHeight, screenHeight * 0.6 - fixedChrome)
         let rowCount = max(model.filteredSessions.count, 1)
         let desiredListHeight = CGFloat(rowCount) * agentRowHeight + 8
         let listHeight = min(desiredListHeight, maxListHeight)
         model.listHeight = listHeight
-        popover.contentSize = NSSize(width: 400, height: fixedChrome + listHeight)
+        popover.contentSize = NSSize(width: PopoverLayout.width, height: fixedChrome + listHeight)
     }
 
     /// One glyph per agent, colored by status — the same "at a glance" display
