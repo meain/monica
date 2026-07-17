@@ -29,11 +29,24 @@ private struct MenuBarPopoverView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TextField("Search agents…", text: $model.filterText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 14))
+            if let target = model.composeTarget {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Message \(target.displayTitle)")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                    TextField("Type and press Return to send…", text: $model.composeText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14))
+                        .focused($searchFocused)
+                }
                 .padding(8)
-                .focused($searchFocused)
+            } else {
+                TextField("Search agents…", text: $model.filterText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .padding(8)
+                    .focused($searchFocused)
+            }
 
             Divider()
 
@@ -49,6 +62,13 @@ private struct MenuBarPopoverView: View {
             // fixed height instead.
             .frame(height: 220)
 
+            if model.composeTarget == nil {
+                Text("↩ switch  ·  ⌘↩ send message")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .padding(.vertical, 4)
+            }
+
             Divider()
 
             VStack(spacing: 0) {
@@ -58,6 +78,7 @@ private struct MenuBarPopoverView: View {
         }
         .frame(width: 300)
         .onAppear { searchFocused = true }
+        .onChange(of: model.composeTarget) { searchFocused = true }
     }
 }
 
@@ -84,10 +105,14 @@ final class MenuBarController {
         // before its first layout pass — that ambiguous guess is what caused
         // the popover to anchor ~180pt below the status item instead of
         // right beneath it (see AGENTS.md).
-        popover.contentSize = NSSize(width: 300, height: 320)
+        popover.contentSize = NSSize(width: 300, height: 345)
 
         model.onCommit = { [weak self] session in
             Switcher.activate(session, targetApp: AppSettings.shared.targetApp)
+            self?.closePopover()
+        }
+        model.onSendMessage = { [weak self] session, text in
+            Switcher.sendMessage(session, text: text)
             self?.closePopover()
         }
         model.onCancel = { [weak self] in self?.closePopover() }

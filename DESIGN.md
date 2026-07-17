@@ -97,16 +97,16 @@ MenuBarController (NSStatusItem: one glyph per agent, e.g. "▶ ● ○")
         ▼               ▼
    NSPopover: search field → AgentPickerModel.filteredSessions → AgentListView
         │                                                            │
-        │                                          click a row / Enter
-        │                                                            ▼
-        │                                                        Switcher
-        │                                          tmux select-pane → resolve
-        │                                          session:window → tmux
-        │                                          list-clients → switch-client
-        │                                          -c <client> -t <target> →
-        │                                          open -a <configured app>
-        ▼
-  footer: "Settings…" → SettingsWindowController (NSWindow)
+        │                                    click a row / Return    │  ⌘Return
+        │                                                            ▼        ▼
+        │                                                        Switcher   compose mode:
+        │                                          tmux select-pane → resolve  search field →
+        │                                          session:window → tmux      message field,
+        │                                          list-clients → switch-client Return sends via
+        │                                          -c <client> -t <target> →   Switcher.sendMessage
+        │                                          open -a <configured app>    (tmux send-keys),
+        ▼                                                                     Escape cancels back
+  footer: "Settings…" → SettingsWindowController (NSWindow)                   to search
           "Quit monica"
 ```
 
@@ -158,6 +158,16 @@ outside tmux entirely, so it must:
 Known gap (accepted for v1): if multiple windows of the target app are open, step 5
 may raise the wrong one. Fixing this means porting dmux's Accessibility-API +
 OSC-2 title-token approach — deliberately deferred.
+
+### Sending a message without switching (⌘Return)
+
+Mirrors `,tmux-ai-agents`'s `alt-enter` binding
+(`tmux send-keys -t {3} "$msg" Enter`), which sends text into a pane without switching
+focus to it — useful for nudging an agent that's `waiting` without leaving what you're
+doing. In the popover: ⌘Return on a selected row swaps the search field for a message
+field (`AgentPickerModel.composeTarget`); plain Return sends via
+`Switcher.sendMessage(_:text:)` (`tmux send-keys -t <paneId> <text> Enter`) and closes
+the popover; Escape cancels back to the search field instead of closing the popover.
 
 ## File layout
 

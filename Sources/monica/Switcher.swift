@@ -25,6 +25,13 @@ enum Switcher {
         runFireAndForget("/usr/bin/open", ["-a", targetApp])
     }
 
+    /// Sends text + Enter directly to the pane without switching focus to it
+    /// — same as `,tmux-ai-agents`'s `alt-enter` binding
+    /// (`tmux send-keys -t {3} "$msg" Enter`).
+    static func sendMessage(_ session: AgentSession, text: String) {
+        TmuxCLI.run(["send-keys", "-t", session.paneId, text, "Enter"])
+    }
+
     /// `#{session_name}:#{window_id}` for the given window, resolved across all
     /// sessions (a window's session can differ from a pane's session_group).
     private static func resolveSessionWindow(windowId: String) -> String? {
