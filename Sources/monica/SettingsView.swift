@@ -104,6 +104,9 @@ struct SettingsView: View {
               .font(.system(size: 11))
               .foregroundStyle(.tertiary)
           }
+          Button("Setup Guide…") { openDocs() }
+            .buttonStyle(.link)
+            .font(.system(size: 11))
         }
         .padding(.vertical, 2)
         // `.formStyle(.grouped)` is backed by a List, which has the
@@ -188,6 +191,11 @@ struct SettingsView: View {
     // visible scrollbar despite ScrollbarSuppressor above, since hiding
     // the scroller doesn't stop the content from overflowing).
     .frame(width: 480, height: 760)
+  }
+
+  private func openDocs() {
+    guard let url = URL(string: "https://github.com/meain/monica/blob/main/docs.md") else { return }
+    NSWorkspace.shared.open(url)
   }
 
   private func chooseApp() {

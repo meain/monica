@@ -122,7 +122,12 @@ final class MenuBarController {
   private func updateTitle() {
     guard let button = statusItem.button else { return }
     let sessions = scanner.sessions
-    let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .medium)
+    // Menlo, not the SF monospaced system font: SF mono has no ◌ (U+25CC), so
+    // the stale glyph silently fell back to Menlo while ▶ ● ○ stayed SF —
+    // mismatched sizes/baselines, visibly misaligned in the menu bar. Menlo
+    // covers all four glyphs, so they align with each other by design.
+    let font =
+      NSFont(name: "Menlo", size: 13) ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .medium)
     let title = NSMutableAttributedString()
 
     if sessions.isEmpty {
