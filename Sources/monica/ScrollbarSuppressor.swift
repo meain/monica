@@ -25,30 +25,30 @@ import SwiftUI
 /// `hasHorizontalScroller` to `false` on that instance is authoritative —
 /// it's the actual AppKit state SwiftUI's modifier doesn't fully control.
 struct ScrollbarSuppressor: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        DispatchQueue.main.async { configure(from: view) }
-        return view
-    }
+  func makeNSView(context: Context) -> NSView {
+    let view = NSView(frame: .zero)
+    DispatchQueue.main.async { configure(from: view) }
+    return view
+  }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { configure(from: nsView) }
-    }
+  func updateNSView(_ nsView: NSView, context: Context) {
+    DispatchQueue.main.async { configure(from: nsView) }
+  }
 
-    private func configure(from view: NSView) {
-        guard let scrollView = enclosingScrollView(of: view) else { return }
-        scrollView.hasVerticalScroller = false
-        scrollView.hasHorizontalScroller = false
-        scrollView.scrollerStyle = .overlay
-        scrollView.autohidesScrollers = true
-    }
+  private func configure(from view: NSView) {
+    guard let scrollView = enclosingScrollView(of: view) else { return }
+    scrollView.hasVerticalScroller = false
+    scrollView.hasHorizontalScroller = false
+    scrollView.scrollerStyle = .overlay
+    scrollView.autohidesScrollers = true
+  }
 
-    private func enclosingScrollView(of view: NSView) -> NSScrollView? {
-        var current = view.superview
-        while let candidate = current {
-            if let scrollView = candidate as? NSScrollView { return scrollView }
-            current = candidate.superview
-        }
-        return nil
+  private func enclosingScrollView(of view: NSView) -> NSScrollView? {
+    var current = view.superview
+    while let candidate = current {
+      if let scrollView = candidate as? NSScrollView { return scrollView }
+      current = candidate.superview
     }
+    return nil
+  }
 }

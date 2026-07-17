@@ -18,28 +18,28 @@ import SwiftUI
 /// highlighting this way (unlike beacon's full custom `MarkdownParser`/
 /// `MarkdownView`/`SyntaxHighlighter`), just plain text per line.
 struct MarkdownPreviewText: View {
-    let raw: String
+  let raw: String
 
-    private var lines: [String] {
-        raw.split(separator: "\n", omittingEmptySubsequences: false)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-    }
+  private var lines: [String] {
+    raw.split(separator: "\n", omittingEmptySubsequences: false)
+      .map { $0.trimmingCharacters(in: .whitespaces) }
+      .filter { !$0.isEmpty }
+  }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                Text(inlineAttributed(line))
-            }
-        }
+  var body: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+        Text(inlineAttributed(line))
+      }
     }
+  }
 
-    private func inlineAttributed(_ line: String) -> AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(
-            allowsExtendedAttributes: true,
-            interpretedSyntax: .full,
-            failurePolicy: .returnPartiallyParsedIfPossible
-        )
-        return (try? AttributedString(markdown: line, options: options)) ?? AttributedString(line)
-    }
+  private func inlineAttributed(_ line: String) -> AttributedString {
+    let options = AttributedString.MarkdownParsingOptions(
+      allowsExtendedAttributes: true,
+      interpretedSyntax: .full,
+      failurePolicy: .returnPartiallyParsedIfPossible
+    )
+    return (try? AttributedString(markdown: line, options: options)) ?? AttributedString(line)
+  }
 }
