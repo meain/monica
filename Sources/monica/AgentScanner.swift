@@ -52,7 +52,7 @@ final class AgentScanner: ObservableObject {
 
             guard let agent = tree.findAgent(fromRoot: pane.panePid) else { continue }
 
-            let (status, project, lastUpdated) = lookupStatus(pid: agent.pid, fallbackPath: pane.panePath)
+            let (status, project, lastUpdated, sessionId) = lookupStatus(pid: agent.pid, fallbackPath: pane.panePath)
             result.append(
                 AgentSession(
                     paneId: pane.paneId,
@@ -64,7 +64,8 @@ final class AgentScanner: ObservableObject {
                     agentName: agent.name,
                     status: status,
                     project: project,
-                    lastUpdated: lastUpdated
+                    lastUpdated: lastUpdated,
+                    sessionId: sessionId
                 )
             )
         }
@@ -139,18 +140,18 @@ final class AgentScanner: ObservableObject {
 
     // MARK: - aistatus lookup
 
-    private func lookupStatus(pid: Int32, fallbackPath: String) -> (AgentStatus, String, Date?) {
+    private func lookupStatus(pid: Int32, fallbackPath: String) -> (AgentStatus, String, Date?, String?) {
         let file = statusDir.appendingPathComponent("pid-\(pid).json")
         guard let data = try? Data(contentsOf: file),
             let parsed = try? JSONDecoder().decode(AIStatusFile.self, from: data),
             let ts = parsed.timestamp,
             Date().timeIntervalSince1970 - ts <= staleInterval
         else {
-            return (.idle, (fallbackPath as NSString).lastPathComponent, nil)
+            return (.idle, (fallbackPath as NSString).lastPathComponent, nil, nil)
         }
 
         let status = AgentStatus(rawValue: parsed.status ?? "idle") ?? .idle
         let project = parsed.project ?? (fallbackPath as NSString).lastPathComponent
-        return (status, project, Date(timeIntervalSince1970: ts))
+        return (status, project, Date(timeIntervalSince1970: ts), parsed.session_id)
     }
 }

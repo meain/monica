@@ -39,6 +39,10 @@ struct AgentSession: Identifiable, Equatable {
     var status: AgentStatus
     var project: String
     var lastUpdated: Date?
+    /// From the aistatus file's `session_id` — used to locate the agent's own
+    /// transcript for the message preview. `nil` if the status file was
+    /// missing/stale (see `AgentScanner.lookupStatus`).
+    var sessionId: String?
 
     var id: String { paneId }
 

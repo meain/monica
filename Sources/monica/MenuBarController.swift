@@ -60,13 +60,36 @@ private struct MenuBarPopoverView: View {
             // A `maxHeight` alone reports zero ideal height to the hosting
             // popover — same ScrollView gotcha noted in AGENTS.md. Use a real
             // fixed height instead.
-            .frame(height: 220)
+            .frame(height: 150)
 
             if model.composeTarget == nil {
                 Text("↩ switch  ·  ⌘↩ send message")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
                     .padding(.vertical, 4)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Last message")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                    ScrollView {
+                        Text(model.previewText.isEmpty ? "No active AI agents" : model.previewText)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            // `ScrollView` doesn't reliably constrain a
+                            // `Text`'s wrapping width from `maxWidth:
+                            // .infinity` alone — it can propose an unbounded
+                            // width, so the text stays on one line and blows
+                            // out the popover's overall width. A genuine
+                            // fixed width forces real wrapping.
+                            .frame(width: 304, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                    .frame(height: 90)
+                }
+                .padding(8)
             }
 
             Divider()
@@ -76,7 +99,7 @@ private struct MenuBarPopoverView: View {
                 FooterRow(systemImage: "power", title: "Quit monica", action: onQuit)
             }
         }
-        .frame(width: 300)
+        .frame(width: 320)
         .onAppear { searchFocused = true }
         .onChange(of: model.focusTick) { searchFocused = true }
     }
@@ -105,7 +128,7 @@ final class MenuBarController {
         // before its first layout pass — that ambiguous guess is what caused
         // the popover to anchor ~180pt below the status item instead of
         // right beneath it (see AGENTS.md).
-        popover.contentSize = NSSize(width: 300, height: 345)
+        popover.contentSize = NSSize(width: 320, height: 400)
 
         model.onCommit = { [weak self] session in
             Switcher.activate(session, targetApp: AppSettings.shared.targetApp)

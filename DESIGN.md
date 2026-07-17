@@ -64,6 +64,8 @@ frontmost, or live in the menu bar. That's the gap monica fills.
 | target app | configurable in Settings (text field + an "Choose…" `NSOpenPanel`), defaults to Ghostty (`com.mitchellh.ghostty`) |
 | Spotlight hotkey default | native global hotkey (Carbon `RegisterEventHotKey`), default ⌃⌥⇧A, re-recordable live from Settings |
 | agent scope | whatever's in the aistatus files today (Claude Code hook schema); can extend later |
+| message send | ⌘Return on a row composes a message sent via `tmux send-keys`, mirroring `,tmux-ai-agents`'s `alt-enter` |
+| message preview | reads each agent's own transcript file directly (keyed by `session_id`), not the aistatus file — that has no message content |
 
 **Why the HUD/Spotlight-window surfaces got dropped:** using v1 for real showed the HUD
 strip's one-glyph-per-agent display could just as well live in the menu bar title
@@ -169,6 +171,34 @@ field (`AgentPickerModel.composeTarget`); plain Return sends via
 `Switcher.sendMessage(_:text:)` (`tmux send-keys -t <paneId> <text> Enter`) and closes
 the popover; Escape cancels back to the search field instead of closing the popover.
 
+### Message preview (selected row only)
+
+The aistatus files carry no message content (`{session_id, pid, status, hook_event,
+project, timestamp}` only) — the preview instead reads each agent's *own* transcript
+file directly, keyed by that `session_id`:
+
+- **Claude Code**: `~/.claude/projects/<cwd, every non-alphanumeric char → '-'>/<sessionId>.jsonl`.
+  Confirmed against real transcripts on this machine and against public docs (the
+  format is `type: "user"|"assistant"|"system"` lines with `message.content` blocks of
+  type `text`/`thinking`/`tool_use`). This is the exact same file and the exact same
+  "search backward for the last assistant message's text blocks" logic
+  `notify-summary.sh` already uses.
+- **pi**: `~/.pi/agent/sessions/<"-" + cwd.replacingOccurrences(of: "/", with: "-") + "-->/<timestamp>_<sessionId>/**/session.jsonl`.
+  pi's session format ([pi.dev/docs/latest/session-format](https://pi.dev/docs/latest/session-format))
+  is a branching id/parentId tree across possibly multiple `run-N` directories (resumes)
+  — this is best-effort: it picks the most-recently-modified `session.jsonl` under the
+  session directory and just reads file order, ignoring branches.
+
+Both encodings were reverse-engineered empirically (directory names on this machine)
+and cross-checked against public documentation — see `TranscriptPreview.swift`'s doc
+comment for the exact rules. Only the tail of the transcript (last ~200KB) is read, to
+avoid loading a long-running session's multi-MB file into memory just to preview it.
+
+Only `AgentPickerModel.previewText` for the *currently selected* row is computed (on
+selection change and on each scan refresh while the popover is open) — not all rows at
+once, since it's synchronous file I/O on the main thread. Cheap enough for a single
+tail-read per change; would need to move to a background queue if that ever changes.
+
 ## File layout
 
 ```
@@ -189,9 +219,10 @@ monica/
     HotKeyFormatter.swift           # keyCode+modifiers -> display label ("⌃⌥⇧A")
     KeyRecorderView.swift            # hotkey re-recording control, used in Settings
     AgentListView.swift               # shared SwiftUI row/list view
-    AgentPickerModel.swift             # popover search + keyboard nav (arrow/enter/esc)
-    MenuBarController.swift            # NSStatusItem + popover (search, list, footer)
-    SettingsView.swift                 # SettingsView + SettingsWindowController
+    AgentPickerModel.swift             # popover search + keyboard nav + compose + preview state
+    TranscriptPreview.swift             # reads last message from each agent's own transcript
+    MenuBarController.swift              # NSStatusItem + popover (search, list, preview, footer)
+    SettingsView.swift                    # SettingsView + SettingsWindowController
 ```
 
 ## Build / run

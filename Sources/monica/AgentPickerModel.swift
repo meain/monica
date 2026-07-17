@@ -12,11 +12,20 @@ import Foundation
 /// Escape cancels back to search instead of closing the popover.
 @MainActor
 final class AgentPickerModel: ObservableObject {
-    @Published var sessions: [AgentSession] = []
-    @Published var selection = 0
+    @Published var sessions: [AgentSession] = [] {
+        didSet { updatePreview() }
+    }
+    @Published var selection = 0 {
+        didSet { updatePreview() }
+    }
     @Published var filterText: String = "" {
         didSet { filterChanged() }
     }
+
+    /// The selected row's last message, read live from its transcript file —
+    /// see `TranscriptPreview`. Recomputed on selection/list changes rather
+    /// than cached, so it stays fresh while a row sits highlighted.
+    @Published private(set) var previewText: String = ""
 
     @Published var composeTarget: AgentSession?
     @Published var composeText: String = ""
@@ -81,6 +90,15 @@ final class AgentPickerModel: ObservableObject {
         let count = filteredSessions.count
         guard count > 0 else { selection = 0; return }
         selection = min(selection, count - 1)
+    }
+
+    private func updatePreview() {
+        let list = filteredSessions
+        guard list.indices.contains(selection) else {
+            previewText = ""
+            return
+        }
+        previewText = TranscriptPreview.preview(for: list[selection])
     }
 
     private func commit() {
