@@ -224,12 +224,21 @@ once, since it's synchronous file I/O on the main thread. Cheap enough for a sin
 tail-read per change; would need to move to a background queue if that ever changes.
 
 The preview renders as markdown (`MarkdownPreviewText`, backed by SwiftUI's native
-`AttributedString(markdown:)` with `.full` block-syntax parsing) rather than plain text,
-since Claude Code/pi assistant messages usually *are* markdown. This is deliberately
-lighter than beacon's full custom markdown engine (`MarkdownParser`/`MarkdownView`/
-`SyntaxHighlighter`) — bold/italic/links/lists/headings render, but fenced code blocks
-don't get syntax highlighting (just plain text). Acceptable for a small preview panel;
-would need beacon's approach ported over if that becomes the primary content surface.
+`AttributedString(markdown:)`) rather than plain text, since Claude Code/pi assistant
+messages usually *are* markdown. One `Text(AttributedString)` for the whole document
+doesn't work, though — confirmed visually (a real screenshot showed
+"GreenHighlightsCurrentStatusHitesh", several separate headings/lines glued together
+with no separator at all). `Text` only honors per-character formatting from a parsed
+`AttributedString`, not block-level structure — SwiftUI ignores `presentationIntent`, so
+paragraph/heading breaks vanish. `MarkdownPreviewText` instead splits the raw text into
+lines first and renders each as its own `Text` in a `VStack`, which is what actually
+preserves the breaks (at the cost of not flowing a hard-wrapped multi-line paragraph as
+one block — acceptable for LLM output, which doesn't hard-wrap prose). This is
+deliberately lighter than beacon's full custom markdown engine (`MarkdownParser`/
+`MarkdownView`/`SyntaxHighlighter`) — bold/italic/links/headings render per line, but
+fenced code blocks don't get syntax highlighting (just plain text) and multi-line lists
+lose their shared indentation context. Acceptable for a small preview panel; would need
+beacon's approach ported over if that becomes the primary content surface.
 
 ### Sizing: content-driven, not always maximal
 
