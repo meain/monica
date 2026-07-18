@@ -104,6 +104,67 @@ Monica's "last message" preview for Claude Code reads
 directly — no extra setup needed there, that file already exists as part of
 Claude Code's own session storage.
 
+### Clearing stale status on `/clear`
+
+`/clear` starts a fresh session in the same pane/pid without a new `Stop` or
+`Notification` event, so the pid's status file can otherwise keep showing the
+previous session's stale glyph. Add a second hook script,
+`~/.claude/hooks/clear-status.sh`, that just removes the pid's status file:
+
+```bash
+#!/usr/bin/env bash
+# Remove the pid-keyed status file on /clear so stale status doesn't linger.
+# Triggered by SessionStart (matcher "clear").
+
+INPUT=$(cat)
+
+[ -z "${TMUX_PANE:-}" ] && exit 0
+
+# This hook runs as a child of the claude process itself, but walk up a few
+# levels just in case an intermediate shell/wrapper is in between.
+find_claude_pid() {
+  p="$PPID"
+  for _ in 1 2 3 4 5; do
+    [ -z "$p" ] && break
+    base=$(basename "$(ps -o comm= -p "$p" 2>/dev/null)" 2>/dev/null)
+    if [ "$base" = "claude" ]; then
+      echo "$p"
+      return
+    fi
+    p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+    [ -z "$p" ] || [ "$p" = "1" ] && break
+  done
+  echo "$PPID"
+}
+PID=$(find_claude_pid)
+[ -z "$PID" ] && exit 0
+
+rm -f "$HOME/.local/share/aistatus/pid-${PID}.json"
+```
+
+Make it executable (`chmod +x ~/.claude/hooks/clear-status.sh`) and register it
+for `SessionStart` with the `clear` matcher, so it only fires on `/clear` and
+not on every new session:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "clear",
+        "hooks": [{ "type": "command", "command": "~/.claude/hooks/clear-status.sh || exit 0" }]
+      }
+    ]
+  }
+}
+```
+
+Without this, an agent that runs `/clear` keeps showing its old status glyph
+(and stale "last message" preview) until the next `Stop`/`Notification` event
+overwrites the file — this hook deletes it immediately instead, so Monica falls
+back to showing the agent with no status glyph until the new session emits its
+first real event.
+
 ## pi
 
 Drop an extension file into `~/.pi/agent/extensions/`, e.g.
