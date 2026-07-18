@@ -11,6 +11,10 @@ final class AppSettings: ObservableObject {
     static let pollInterval = "monica.pollInterval"
     static let hotKeyCode = "monica.hotKeyCode"
     static let hotKeyModifiers = "monica.hotKeyModifiers"
+    static let previewShowGitBranch = "monica.previewShowGitBranch"
+    static let previewShowModel = "monica.previewShowModel"
+    static let previewShowLastPrompt = "monica.previewShowLastPrompt"
+    static let previewShowToolActivity = "monica.previewShowToolActivity"
   }
 
   /// The app name passed to `open -a <targetApp>` when switching. Ghostty by
@@ -36,6 +40,28 @@ final class AppSettings: ObservableObject {
     didSet { UserDefaults.standard.set(hotKeyModifiers, forKey: Keys.hotKeyModifiers) }
   }
 
+  /// Extra transcript context shown in the popover's "LAST MESSAGE" preview
+  /// panel, when the transcript actually has it — all default to on.
+  @Published var previewShowGitBranch: Bool {
+    didSet { UserDefaults.standard.set(previewShowGitBranch, forKey: Keys.previewShowGitBranch) }
+  }
+
+  @Published var previewShowModel: Bool {
+    didSet { UserDefaults.standard.set(previewShowModel, forKey: Keys.previewShowModel) }
+  }
+
+  @Published var previewShowLastPrompt: Bool {
+    didSet {
+      UserDefaults.standard.set(previewShowLastPrompt, forKey: Keys.previewShowLastPrompt)
+    }
+  }
+
+  @Published var previewShowToolActivity: Bool {
+    didSet {
+      UserDefaults.standard.set(previewShowToolActivity, forKey: Keys.previewShowToolActivity)
+    }
+  }
+
   private init() {
     let defaults = UserDefaults.standard
     targetApp = defaults.string(forKey: Keys.targetApp) ?? "Ghostty"
@@ -44,5 +70,10 @@ final class AppSettings: ObservableObject {
     hotKeyModifiers =
       defaults.object(forKey: Keys.hotKeyModifiers) as? UInt32
       ?? UInt32(controlKey | optionKey | shiftKey)
+    previewShowGitBranch = defaults.object(forKey: Keys.previewShowGitBranch) as? Bool ?? true
+    previewShowModel = defaults.object(forKey: Keys.previewShowModel) as? Bool ?? true
+    previewShowLastPrompt = defaults.object(forKey: Keys.previewShowLastPrompt) as? Bool ?? true
+    previewShowToolActivity =
+      defaults.object(forKey: Keys.previewShowToolActivity) as? Bool ?? true
   }
 }

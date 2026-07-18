@@ -148,6 +148,23 @@ struct SettingsView: View {
       }
 
       Section {
+        Toggle("Git branch", isOn: $settings.previewShowGitBranch)
+        Toggle("Model", isOn: $settings.previewShowModel)
+        Toggle("Last prompt", isOn: $settings.previewShowLastPrompt)
+        Toggle("Tool activity", isOn: $settings.previewShowToolActivity)
+      } header: {
+        Text("Preview details")
+      } footer: {
+        Text(
+          "Extra context shown in the LAST MESSAGE panel when the transcript has it — "
+            + "git branch, model, your last prompt, and the last tool call."
+        )
+        .font(.caption)
+        .foregroundColor(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      }
+
+      Section {
         LabeledContent("Application") {
           HStack {
             TextField("App name", text: $settings.targetApp)
@@ -190,7 +207,7 @@ struct SettingsView: View {
     // fit *all* sections, or the Form's internal List scrolls (with a
     // visible scrollbar despite ScrollbarSuppressor above, since hiding
     // the scroller doesn't stop the content from overflowing).
-    .frame(width: 480, height: 760)
+    .frame(width: 480, height: 900)
   }
 
   private func openDocs() {

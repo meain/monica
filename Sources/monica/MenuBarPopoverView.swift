@@ -141,10 +141,22 @@ private struct AgentListSection: View {
 
 private struct LastMessageSection: View {
   @ObservedObject var model: AgentPickerModel
+  @ObservedObject private var settings = AppSettings.shared
+
+  private var details: TranscriptDetails { model.previewDetails }
 
   /// Inner padding of the preview card; the text's fixed wrapping width
   /// below must subtract it from both sides.
   private static let cardPadding: CGFloat = 8
+
+  /// True once at least one enabled detail toggle actually has data to
+  /// show — keeps the chip row from reserving space when nothing's there
+  /// (e.g. every pi session, which never has a git branch).
+  private var showsMetaRow: Bool {
+    (settings.previewShowGitBranch && details.gitBranch != nil)
+      || (settings.previewShowModel && details.model != nil)
+      || (settings.previewShowToolActivity && details.toolActivity != nil)
+  }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 5) {
@@ -161,9 +173,32 @@ private struct LastMessageSection: View {
             .lineLimit(1)
         }
       }
+
+      if showsMetaRow {
+        // Horizontally scrollable rather than wrapping, so a long tool
+        // summary or model name can't blow out the popover's fixed
+        // width — same reasoning as the ScrollView-based clamping used
+        // elsewhere in this file.
+        ScrollView(.horizontal, showsIndicators: false) {
+          MetaChipsRow(details: details, settings: settings)
+        }
+      }
+
+      if settings.previewShowLastPrompt, let prompt = details.lastPrompt, !prompt.isEmpty {
+        HStack(alignment: .top, spacing: 4) {
+          Text("You:")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.tertiary)
+          Text(prompt)
+            .font(.system(size: 10))
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+        }
+      }
+
       ScrollView {
         MarkdownPreviewText(
-          raw: model.previewText.isEmpty ? "No agent selected" : model.previewText
+          raw: details.text ?? "No agent selected"
         )
         .font(.system(size: 11))
         .foregroundColor(.secondary)
@@ -192,6 +227,49 @@ private struct LastMessageSection: View {
       )
     }
     .popoverSection()
+  }
+}
+
+/// A single small pill in the preview panel's meta row (git branch, model,
+/// or tool activity) — same visual language as `AgentBadge` but generic and
+/// icon-led rather than agent-tinted.
+private struct MetaChip: View {
+  let systemImage: String
+  let text: String
+
+  var body: some View {
+    HStack(spacing: 3) {
+      Image(systemName: systemImage)
+        .font(.system(size: 8))
+      Text(text)
+        .font(.system(size: 9, weight: .medium))
+        .lineLimit(1)
+    }
+    .foregroundStyle(.secondary)
+    .padding(.horizontal, 5)
+    .padding(.vertical, 1)
+    .background(Capsule().fill(Color.secondary.opacity(0.12)))
+  }
+}
+
+/// Git branch / model / last tool call, each independently toggleable from
+/// Settings and each only shown when the transcript actually had that field.
+private struct MetaChipsRow: View {
+  let details: TranscriptDetails
+  @ObservedObject var settings: AppSettings
+
+  var body: some View {
+    HStack(spacing: 5) {
+      if settings.previewShowGitBranch, let branch = details.gitBranch {
+        MetaChip(systemImage: "arrow.triangle.branch", text: branch)
+      }
+      if settings.previewShowModel, let model = details.model {
+        MetaChip(systemImage: "cpu", text: model)
+      }
+      if settings.previewShowToolActivity, let tool = details.toolActivity {
+        MetaChip(systemImage: "wrench.and.screwdriver", text: tool)
+      }
+    }
   }
 }
 

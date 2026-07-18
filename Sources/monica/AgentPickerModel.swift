@@ -22,10 +22,12 @@ final class AgentPickerModel: ObservableObject {
     didSet { filterChanged() }
   }
 
-  /// The selected row's last message, read live from its transcript file —
-  /// see `TranscriptPreview`. Recomputed on selection/list changes rather
-  /// than cached, so it stays fresh while a row sits highlighted.
-  @Published private(set) var previewText: String = ""
+  /// The selected row's last message plus extra transcript context (git
+  /// branch, model, last prompt, tool activity), read live from its
+  /// transcript file — see `TranscriptPreview`. Recomputed on
+  /// selection/list changes rather than cached, so it stays fresh while a
+  /// row sits highlighted.
+  @Published private(set) var previewDetails = TranscriptDetails()
 
   @Published var composeTarget: AgentSession?
   @Published var composeText: String = ""
@@ -109,10 +111,10 @@ final class AgentPickerModel: ObservableObject {
   private func updatePreview() {
     let list = filteredSessions
     guard list.indices.contains(selection) else {
-      previewText = ""
+      previewDetails = TranscriptDetails()
       return
     }
-    previewText = TranscriptPreview.preview(for: list[selection])
+    previewDetails = TranscriptPreview.details(for: list[selection])
   }
 
   private func commit() {
