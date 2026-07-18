@@ -136,6 +136,9 @@ struct SettingsView: View {
         LegendRow(glyph: "●", color: .yellow, name: "Waiting", detail: "Needs your input")
         LegendRow(glyph: "○", color: .secondary, name: "Idle", detail: "Nothing in progress")
         LegendRow(
+          glyph: "●", color: .secondary, name: "Quiet",
+          detail: "No status updates for 15+ minutes")
+        LegendRow(
           glyph: "◌", color: .secondary, name: "Stale",
           detail: "No status updates for over 3 hours")
       } header: {

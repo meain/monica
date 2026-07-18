@@ -177,7 +177,7 @@ final class MenuBarController {
           title.append(NSAttributedString(string: " ", attributes: [.font: font]))
         }
         let color: NSColor =
-          session.isStale
+          session.isStale || session.isQuiet
           ? .secondaryLabelColor
           : (session.status == .working
             ? .systemGreen : session.status == .waiting ? .systemYellow : .secondaryLabelColor)

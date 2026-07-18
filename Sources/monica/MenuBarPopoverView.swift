@@ -285,8 +285,8 @@ private struct FooterSection: View {
     let sessions = model.sessions
     guard !sessions.isEmpty else { return "No agents" }
     var parts: [String] = []
-    let working = sessions.filter { $0.status == .working && !$0.isStale }.count
-    let waiting = sessions.filter { $0.status == .waiting && !$0.isStale }.count
+    let working = sessions.filter { $0.status == .working && !$0.isStale && !$0.isQuiet }.count
+    let waiting = sessions.filter { $0.status == .waiting && !$0.isStale && !$0.isQuiet }.count
     if working > 0 { parts.append("\(working) working") }
     if waiting > 0 { parts.append("\(waiting) waiting") }
     if parts.isEmpty { parts.append("all idle") }

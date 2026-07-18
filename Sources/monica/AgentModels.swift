@@ -62,6 +62,7 @@ struct AgentSession: Identifiable, Equatable {
   }
 
   private static let staleThreshold: TimeInterval = 3 * 3600
+  private static let quietThreshold: TimeInterval = 15 * 60
 
   /// True once a *known* last-update timestamp is more than 3h old — not
   /// when it's `nil` (no status file yet is "unknown", not "stale").
@@ -73,8 +74,22 @@ struct AgentSession: Identifiable, Equatable {
     return Date().timeIntervalSince(lastUpdated) > AgentSession.staleThreshold
   }
 
-  /// A dotted circle for agents that haven't updated their status in over
-  /// 3h, regardless of what that stale `status` value says — otherwise the
-  /// normal status glyph.
-  var displayGlyph: String { isStale ? "◌" : status.glyph }
+  /// True for the 15m-3h window between a normal update and going fully
+  /// `isStale` — the status file hasn't been touched in a while but isn't
+  /// old enough yet to distrust entirely. Doesn't change `status` itself,
+  /// just how it's drawn (see `displayGlyph`).
+  var isQuiet: Bool {
+    guard let lastUpdated else { return false }
+    let elapsed = Date().timeIntervalSince(lastUpdated)
+    return elapsed > AgentSession.quietThreshold && elapsed <= AgentSession.staleThreshold
+  }
+
+  /// A dotted circle once stale (>3h), a filled gray circle once quiet
+  /// (15m-3h) regardless of what `status` says, otherwise the normal
+  /// status glyph.
+  var displayGlyph: String {
+    if isStale { return "◌" }
+    if isQuiet { return "●" }
+    return status.glyph
+  }
 }

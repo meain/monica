@@ -4,8 +4,8 @@ import SwiftUI
 /// Settings legend, so a status never renders in two slightly different
 /// shades in different places.
 enum StatusStyle {
-  static func color(for status: AgentStatus, isStale: Bool) -> Color {
-    guard !isStale else { return .secondary }
+  static func color(for status: AgentStatus, isStale: Bool, isQuiet: Bool) -> Color {
+    guard !isStale, !isQuiet else { return .secondary }
     switch status {
     case .working: return .green
     case .waiting: return .yellow
@@ -13,8 +13,10 @@ enum StatusStyle {
     }
   }
 
-  static func word(for status: AgentStatus, isStale: Bool) -> String {
-    isStale ? "stale" : status.rawValue
+  static func word(for status: AgentStatus, isStale: Bool, isQuiet: Bool) -> String {
+    if isStale { return "stale" }
+    if isQuiet { return "quiet" }
+    return status.rawValue
   }
 
   /// Per-agent tint for the small name badge: claude is orange (its brand
@@ -30,19 +32,26 @@ enum StatusStyle {
 
 /// The row's leading status indicator: a filled dot for working/waiting
 /// (working gets a soft glow so it reads as "live" at a glance), a hollow
-/// ring for idle, and a dashed ring for stale — the same shape language as
-/// the menu bar glyphs (▶ ● ○ ◌) without mixing text glyphs into the rows.
+/// ring for idle, a filled gray dot once quiet (15m-3h since the last status
+/// update), and a dashed ring for stale — the same shape language as the
+/// menu bar glyphs (▶ ● ○ ● ◌) without mixing text glyphs into the rows.
 struct StatusIndicator: View {
   let status: AgentStatus
   let isStale: Bool
+  let isQuiet: Bool
 
-  private var color: Color { StatusStyle.color(for: status, isStale: isStale) }
+  private var color: Color {
+    StatusStyle.color(for: status, isStale: isStale, isQuiet: isQuiet)
+  }
 
   var body: some View {
     ZStack {
       if isStale {
         Circle()
           .strokeBorder(color, style: StrokeStyle(lineWidth: 1.5, dash: [1.5, 2]))
+      } else if isQuiet {
+        Circle()
+          .fill(color)
       } else {
         switch status {
         case .working:
@@ -85,7 +94,7 @@ struct AgentRowView: View {
 
   var body: some View {
     HStack(alignment: .center, spacing: 8) {
-      StatusIndicator(status: session.status, isStale: session.isStale)
+      StatusIndicator(status: session.status, isStale: session.isStale, isQuiet: session.isQuiet)
       Text(session.project)
         .font(.system(size: 13, weight: .semibold))
         .lineLimit(1)
