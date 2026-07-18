@@ -3,14 +3,14 @@
 A macOS menu bar app for watching and switching between AI coding agents (Claude
 Code, `pi`) running inside tmux panes.
 
-![Monica popover](docs/screenshot.png)
+![Monica popover](https://github.com/user-attachments/assets/cd3f5d5c-3be5-47d4-99b2-7106a2d28ae0)
 
 ## What it does
 
 Monica sits in your menu bar as a status item showing one glyph per agent, reflecting
 whether each is idle, working, or waiting on you:
 
-![Menu bar status glyphs](docs/menubar.png)
+![Menu bar status glyphs](https://github.com/user-attachments/assets/eee6ac36-6bfd-430a-9c57-9aa7018117ed)
 
 Click the icon, or press a global hotkey, to open a popover with:
 

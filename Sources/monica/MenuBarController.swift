@@ -74,6 +74,43 @@ final class MenuBarController {
     }
   }
 
+  /// Debug helper for `MONICA_SHOT`: opens the popover and renders its
+  /// backing window's full content (arrow/chrome included, not just the
+  /// SwiftUI content view) to a PNG — bypasses Screen Recording permission
+  /// entirely by using AppKit's own offscreen `cacheDisplay`, same technique
+  /// as booker's `BOOKER_SHOT` (see booker's AGENTS.md). Gated behind the env
+  /// var; has no effect on normal launches.
+  func renderPopoverToFile(_ path: String, delay: Double) {
+    openPopover()
+    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+      guard let window = self.popover.contentViewController?.view.window,
+        let contentView = window.contentView,
+        let rep = contentView.bitmapImageRepForCachingDisplay(in: contentView.bounds)
+      else {
+        NSApp.terminate(nil)
+        return
+      }
+      contentView.cacheDisplay(in: contentView.bounds, to: rep)
+      if let data = rep.representation(using: .png, properties: [:]) {
+        try? data.write(to: URL(fileURLWithPath: path))
+      }
+      NSApp.terminate(nil)
+    }
+  }
+
+  /// Debug helper for `MONICA_SHOT_MENUBAR`: renders the status item's own
+  /// button (the glyph strip) to a PNG. Same technique as
+  /// `renderPopoverToFile`.
+  func renderMenuBarToFile(_ path: String) {
+    guard let button = statusItem.button,
+      let rep = button.bitmapImageRepForCachingDisplay(in: button.bounds)
+    else { return }
+    button.cacheDisplay(in: button.bounds, to: rep)
+    if let data = rep.representation(using: .png, properties: [:]) {
+      try? data.write(to: URL(fileURLWithPath: path))
+    }
+  }
+
   private func openPopover() {
     guard let button = statusItem.button else { return }
     scanner.scan()

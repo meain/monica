@@ -59,18 +59,51 @@ cat ~/.local/share/aistatus/pid-<pid>.json
 
 ### Verifying the GUI
 
-`screencapture` from the CLI is usually **blocked** (no Screen Recording permission),
-so you cannot screenshot the app yourself — **ask the user for a screenshot** to
-confirm rendering, especially for anything inside the popover (see the Accessibility
-note below — you often can't drive it either). You can launch and drive it headlessly
-for smoke tests:
+`screencapture` from the CLI is usually **blocked** (no Screen Recording permission) —
+confirmed by `screencapture -x`/`-l <windowID>` both failing with "could not create
+image from display/window". But you *can* render the actual UI to a PNG without that
+permission at all, same technique as `booker`'s `BOOKER_SHOT` (see booker's AGENTS.md):
+the app renders **its own view** to an offscreen bitmap via `NSView.cacheDisplay(in:to:)`
++ `bitmapImageRepForCachingDisplay`, which needs no OS permission since it's not
+capturing the screen, just asking AppKit to draw the view into a buffer.
+
+`main.swift` wires this up behind two env vars, both gated so they have zero effect on
+normal launches:
+
+```bash
+# Popover (search + list + preview + footer):
+MONICA_SHOT=/tmp/shot.png MONICA_SHOT_DELAY=1.5 ./.build/debug/monica &
+# Menu bar glyph strip only:
+MONICA_SHOT_MENUBAR=/tmp/menubar.png ./.build/debug/monica &
+```
+
+The app opens the popover (or just reads the status item), waits `MONICA_SHOT_DELAY`
+seconds (default 1.5s — first launch after a build is slower; retry with more delay if
+the file comes up empty/missing), renders, writes the PNG, and self-terminates. Then
+`Read` the PNG to inspect the actual rendered layout — this is the reliable way to
+verify SwiftUI layout here, not a last resort.
+
+The rendered popover reflects **real, live tmux/aistatus data** from whatever agents
+are actually running on this machine — there's no demo-data seam like booker's
+`BOOKER_BM_FILE`. That's usually fine (it's the same dogfood data the real screenshots
+in `docs/` show), but the *selected* row's "Last message" preview can end up showing
+the very session you're using to drive this test (self-referential/confusing for a
+README screenshot). Drive a `Down`/`Up` arrow via System Events first to select a
+different row before the shot fires if that happens:
+
+```bash
+osascript -e 'tell application "System Events" to key code 125'  # Down arrow
+```
+
+Check `/tmp/monica.log` (or whatever log you redirect stdout/stderr to) for crashes if
+a plain headless launch is all you need:
 
 ```bash
 ./.build/debug/monica > /tmp/monica.log 2>&1 &
 ```
 
-Check `/tmp/monica.log` for crashes. The menu bar item should appear within a couple
-seconds (first scan happens on launch).
+The menu bar item should appear within a couple seconds (first scan happens on
+launch).
 
 **You can verify window geometry (size/position) without screenshotting** via
 `CGWindowListCopyWindowInfo`, run through a scratch script:
@@ -82,7 +115,10 @@ import Foundation
 let opts = CGWindowListOption(arrayLiteral: .optionOnScreenOnly)
 guard let list = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else { exit(0) }
 for w in list {
-    if let owner = w[kCGWindowOwnerName as String] as? String, owner.contains("monica") {
+    // Owner name is "Monica" (capitalized display name — see the display-string
+    // gotcha below), not lowercase "monica"; a lowercase `.contains` check here
+    // silently matches nothing.
+    if let owner = w[kCGWindowOwnerName as String] as? String, owner == "Monica" {
         print(w[kCGWindowName as String] ?? "(no name)", w[kCGWindowBounds as String] ?? "")
     }
 }
@@ -117,6 +153,17 @@ that fails for SwiftUI content, not input delivery.
 
 ## Non-obvious gotchas
 
+- **Images for README/docs.md are never committed to the repo** — they're uploaded via
+  the `gh image` extension (`gh extension install drogers0/gh-image`; authenticates via
+  your browser's `user_session` cookie, no PAT scopes) to GitHub's `user-attachments`
+  CDN and also posted as a comment on the
+  [meain/monica#4 "Media"](https://github.com/meain/monica/issues/4) tracking issue for
+  a durable history: `gh image <file>.png --repo meain/monica` prints a ready-to-paste
+  `![...](https://github.com/user-attachments/assets/...)` line and URL, then
+  `gh issue comment 4 --repo meain/monica --body "..."` records it. Use that URL
+  directly in README.md/docs.md — don't add the PNG to `docs/`. See the
+  `update-readme-screenshot` skill for the scripted version of this for the popover
+  screenshot specifically.
 - **The aistatus files have no message content** (`session_id`, `pid`, `status`,
   `hook_event`, `project`, `timestamp` — that's it). The "Last message" preview instead
   reads each agent's own transcript file directly, keyed by `session_id`. The two
@@ -250,12 +297,3 @@ that fails for SwiftUI content, not input delivery.
   and sets `hasVerticalScroller`/`hasHorizontalScroller = false` directly — that's the
   authoritative fix. Any `.formStyle(.grouped)` `Form` is List-backed and has the same
   issue if its content ever overflows.
-- **Automated testing with synthetic keystrokes can pollute real `UserDefaults`.** During
-  one round of Accessibility-based testing, `com.meain.monica`'s stored hotkey ended up
-  as keyCode 43 ("," ) + modifiers 6400 (⌃⌥⌘) — clearly not anything intentionally
-  recorded, and displaying as "?" in Settings since that keycode isn't in
-  `HotKeyFormatter`'s lookup table. Cleared via
-  `defaults delete com.meain.monica monica.hotKeyCode` /
-  `monica.hotKeyModifiers`. If a setting looks like garbage during testing, check
-  whether your own synthetic `osascript keystroke`/`key code` commands could have hit a
-  live `KeyRecorderView` in recording state before assuming it's a code bug.
