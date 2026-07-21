@@ -158,7 +158,9 @@ private struct AgentListSection: View {
       }
       Button("Cancel", role: .cancel) { model.pendingKillSession = nil }
     } message: { session in
-      Text("This ends the tmux pane running \(session.project) — the agent process will be terminated.")
+      Text(
+        "This ends the tmux pane running \(session.project) — the agent process will be terminated."
+      )
     }
   }
 
@@ -327,33 +329,91 @@ private struct FooterSection: View {
   let onSettings: () -> Void
   let onQuit: () -> Void
 
-  /// "2 working · 1 waiting · 4 agents" — always sums over *all* agents,
-  /// not the filtered list, so it stays a status readout rather than a
-  /// search-result count (the search field already shows that).
-  private var summary: String {
+  private struct StatusChip {
+    let label: String
+    /// The status word to filter by when tapped, matching
+    /// `StatusStyle.word(for:isStale:isQuiet:)` — reuses the existing
+    /// (previously undiscoverable) "type a status word to filter" behavior
+    /// in `AgentPickerModel.filteredSessions`. `nil` means "show all",
+    /// used by the trailing "N agents" segment.
+    let filterWord: String?
+  }
+
+  /// "2 working · 1 waiting · 4 agents" as individually tappable segments —
+  /// always sums over *all* agents, not the filtered list, so it stays a
+  /// status readout rather than a search-result count (the search field
+  /// already shows that).
+  private var chips: [StatusChip] {
     let sessions = model.sessions
-    guard !sessions.isEmpty else { return "No agents" }
-    var parts: [String] = []
+    guard !sessions.isEmpty else { return [StatusChip(label: "No agents", filterWord: nil)] }
+    var result: [StatusChip] = []
     let working = sessions.filter { $0.status == .working && !$0.isStale && !$0.isQuiet }.count
     let waiting = sessions.filter { $0.status == .waiting && !$0.isStale && !$0.isQuiet }.count
-    if working > 0 { parts.append("\(working) working") }
-    if waiting > 0 { parts.append("\(waiting) waiting") }
-    if parts.isEmpty { parts.append("all idle") }
-    parts.append("\(sessions.count) agent\(sessions.count == 1 ? "" : "s")")
-    return parts.joined(separator: " · ")
+    if working > 0 {
+      result.append(StatusChip(label: "\(working) working", filterWord: "working"))
+    }
+    if waiting > 0 {
+      result.append(StatusChip(label: "\(waiting) waiting", filterWord: "waiting"))
+    }
+    if result.isEmpty { result.append(StatusChip(label: "all idle", filterWord: "idle")) }
+    result.append(
+      StatusChip(
+        label: "\(sessions.count) agent\(sessions.count == 1 ? "" : "s")", filterWord: nil))
+    return result
+  }
+
+  /// Tapping the already-active chip clears the filter (toggle); tapping a
+  /// different one replaces it. The "N agents"/"No agents" chip (nil
+  /// `filterWord`) always clears, acting as a "show all" reset.
+  private func tap(_ chip: StatusChip) {
+    guard let word = chip.filterWord else {
+      model.filterText = ""
+      return
+    }
+    if model.filterText.caseInsensitiveCompare(word) == .orderedSame {
+      model.filterText = ""
+    } else {
+      model.filterText = word
+      model.requestFocus()
+    }
   }
 
   var body: some View {
     HStack(spacing: 4) {
-      Text(summary)
-        .font(.system(size: 11))
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
+      HStack(spacing: 4) {
+        ForEach(Array(chips.enumerated()), id: \.offset) { index, chip in
+          if index > 0 {
+            Text("·").foregroundStyle(.tertiary)
+          }
+          StatusChipText(label: chip.label) { tap(chip) }
+        }
+      }
+      .font(.system(size: 11))
+      .lineLimit(1)
       Spacer(minLength: 8)
       FooterIconButton(systemImage: "gearshape", help: "Settings", action: onSettings)
       FooterIconButton(systemImage: "power", help: "Quit Monica", action: onQuit)
     }
     .popoverSection(vertical: 7)
+  }
+}
+
+/// A single tappable footer summary segment — underlines and brightens on
+/// hover so it reads as interactive despite being plain `Text`, matching
+/// `FooterIconButton`'s hover language without needing a button background
+/// (which would look too heavy inline with prose).
+private struct StatusChipText: View {
+  let label: String
+  let action: () -> Void
+  @State private var hovering = false
+
+  var body: some View {
+    Text(label)
+      .foregroundStyle(hovering ? .primary : .secondary)
+      .underline(hovering)
+      .contentShape(Rectangle())
+      .onTapGesture(perform: action)
+      .onHover { hovering = $0 }
   }
 }
 
