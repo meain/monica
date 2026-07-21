@@ -201,7 +201,7 @@ final class MenuBarController {
 
     button.attributedTitle = title
     if popover.isShown {
-      model.sessions = sessions
+      model.refreshData(sessions)
     }
   }
 }

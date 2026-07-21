@@ -86,6 +86,37 @@ final class AgentPickerModel: ObservableObject {
     removeMonitor()
   }
 
+  /// Applied on every periodic re-scan while the popover stays open, instead
+  /// of assigning `sessions` directly — a fresh scan's sort-by-`lastUpdated`
+  /// order shuffles constantly as agents post new status, which reordered
+  /// rows out from under the user mid-glance. Existing rows keep the order
+  /// they had when the popover opened (or last activity-driven order); any
+  /// brand-new agent that shows up while the popover is open is appended at
+  /// the end rather than inserted where its timestamp would normally sort
+  /// it. Rows for agents that disappeared are dropped.
+  func refreshData(_ newSessions: [AgentSession]) {
+    let selectedId = selectedSession?.id
+    let byId = Dictionary(uniqueKeysWithValues: newSessions.map { ($0.id, $0) })
+    var seen = Set<String>()
+    var ordered: [AgentSession] = []
+    ordered.reserveCapacity(newSessions.count)
+    for existing in sessions {
+      if let updated = byId[existing.id] {
+        ordered.append(updated)
+        seen.insert(existing.id)
+      }
+    }
+    for session in newSessions where !seen.contains(session.id) {
+      ordered.append(session)
+    }
+    sessions = ordered
+    if let selectedId, let idx = filteredSessions.firstIndex(where: { $0.id == selectedId }) {
+      selection = idx
+    } else {
+      filterChanged()
+    }
+  }
+
   func move(_ delta: Int) {
     let list = filteredSessions
     guard !list.isEmpty else { return }
