@@ -123,7 +123,10 @@ struct AgentRowView: View {
     )
     .padding(.horizontal, PopoverLayout.rowOuterInset)
     .contentShape(Rectangle())
-    .help(session.panePath)
+    // Row text truncates (`lineLimit(1)` on project/session/window above);
+    // the tooltip carries the untruncated names plus the working directory
+    // so a long project name is never fully hidden.
+    .help("\(session.displayTitle) — \(session.displaySubtitle)\n\(session.panePath)")
   }
 }
 
