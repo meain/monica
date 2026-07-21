@@ -58,6 +58,10 @@ final class AgentPickerModel: ObservableObject {
     return sessions.filter {
       $0.displayTitle.localizedCaseInsensitiveContains(filterText)
         || $0.displaySubtitle.localizedCaseInsensitiveContains(filterText)
+        // Lets typing "waiting"/"working"/"idle"/"stale"/"quiet" filter by
+        // status, matching the same word shown in the row's status legend.
+        || StatusStyle.word(for: $0.status, isStale: $0.isStale, isQuiet: $0.isQuiet)
+          .localizedCaseInsensitiveContains(filterText)
     }
   }
 
