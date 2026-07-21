@@ -1,6 +1,25 @@
 import Carbon.HIToolbox
 import Foundation
 
+/// How `AgentScanner.scan()` orders `sessions` — read fresh on every scan, so
+/// changing it in Settings takes effect on the next scan tick (or
+/// immediately on next popover open, which scans synchronously). Purely an
+/// initial-order concern: `AgentPickerModel.refreshData`'s "keep existing
+/// rows stable while the popover is open" behavior is unaffected either way.
+enum SortMode: String, CaseIterable, Identifiable {
+  case recency
+  case statusPriority
+
+  var id: String { rawValue }
+
+  var label: String {
+    switch self {
+    case .recency: return "Recency"
+    case .statusPriority: return "Status"
+    }
+  }
+}
+
 /// UserDefaults-backed settings, edited from the Settings window and shared
 /// with the menu bar popover / global hotkey.
 final class AppSettings: ObservableObject {
@@ -17,6 +36,7 @@ final class AppSettings: ObservableObject {
     static let previewShowModel = "monica.previewShowModel"
     static let previewShowLastPrompt = "monica.previewShowLastPrompt"
     static let previewShowToolActivity = "monica.previewShowToolActivity"
+    static let sortMode = "monica.sortMode"
   }
 
   /// The app name passed to `open -a <targetApp>` when switching. Ghostty by
@@ -87,6 +107,10 @@ final class AppSettings: ObservableObject {
     }
   }
 
+  @Published var sortMode: SortMode {
+    didSet { UserDefaults.standard.set(sortMode.rawValue, forKey: Keys.sortMode) }
+  }
+
   private init() {
     let defaults = UserDefaults.standard
     targetApp = defaults.string(forKey: Keys.targetApp) ?? "Ghostty"
@@ -104,5 +128,7 @@ final class AppSettings: ObservableObject {
     previewShowLastPrompt = defaults.object(forKey: Keys.previewShowLastPrompt) as? Bool ?? true
     previewShowToolActivity =
       defaults.object(forKey: Keys.previewShowToolActivity) as? Bool ?? true
+    sortMode =
+      defaults.string(forKey: Keys.sortMode).flatMap(SortMode.init(rawValue:)) ?? .recency
   }
 }

@@ -79,8 +79,19 @@ final class AgentScanner: ObservableObject {
       )
     }
 
-    // Most recently updated first, matching the picker's sort order.
-    result.sort { ($0.lastUpdated ?? .distantPast) > ($1.lastUpdated ?? .distantPast) }
+    // Order is settings-driven (see `SortMode`) — read fresh each scan so a
+    // Settings change takes effect on the next tick without restarting.
+    switch AppSettings.shared.sortMode {
+    case .recency:
+      result.sort { ($0.lastUpdated ?? .distantPast) > ($1.lastUpdated ?? .distantPast) }
+    case .statusPriority:
+      result.sort {
+        if $0.sortPriorityRank != $1.sortPriorityRank {
+          return $0.sortPriorityRank > $1.sortPriorityRank
+        }
+        return ($0.lastUpdated ?? .distantPast) > ($1.lastUpdated ?? .distantPast)
+      }
+    }
     sessions = result
   }
 

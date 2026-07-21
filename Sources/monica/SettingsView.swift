@@ -212,6 +212,24 @@ struct SettingsView: View {
       }
 
       Section {
+        Picker("Sort agents by", selection: $settings.sortMode) {
+          ForEach(SortMode.allCases) { mode in
+            Text(mode.label).tag(mode)
+          }
+        }
+        .pickerStyle(.segmented)
+      } footer: {
+        Text(
+          "Recency shows whichever agent posted a status update most recently. Status sorts "
+            + "working agents first, then waiting, then idle. Either way, quiet/stale agents "
+            + "always sink to the bottom."
+        )
+        .font(.caption)
+        .foregroundColor(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      }
+
+      Section {
         Toggle("Git branch", isOn: $settings.previewShowGitBranch)
         Toggle("Model", isOn: $settings.previewShowModel)
         Toggle("Last prompt", isOn: $settings.previewShowLastPrompt)
