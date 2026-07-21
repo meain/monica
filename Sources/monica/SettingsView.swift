@@ -3,7 +3,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// A keyboard-key-styled chip ("⌘↩", "esc") used by the Shortcuts section.
-private struct KeyCap: View {
+/// Not `private` — also reused by `MenuBarPopoverView`'s in-popover
+/// shortcuts panel, so the two surfaces render identically.
+struct KeyCap: View {
   let label: String
 
   var body: some View {
@@ -23,7 +25,8 @@ private struct KeyCap: View {
   }
 }
 
-private struct ShortcutRow: View {
+/// Not `private` — see `KeyCap`'s doc comment.
+struct ShortcutRow: View {
   let title: String
   let keys: [String]
 
@@ -173,6 +176,7 @@ struct SettingsView: View {
         ShortcutRow(title: "Filter and move", keys: ["type", "↑", "↓"])
         ShortcutRow(title: "Switch to the selected agent", keys: ["↩"])
         ShortcutRow(title: "Send a message without switching", keys: ["⌘↩"])
+        ShortcutRow(title: "Copy last message", keys: ["⌘⇧C"])
       } header: {
         Text("Shortcuts")
       } footer: {

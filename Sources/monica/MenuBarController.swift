@@ -88,8 +88,13 @@ final class MenuBarController {
   /// entirely by using AppKit's own offscreen `cacheDisplay`, same technique
   /// as booker's `BOOKER_SHOT` (see booker's AGENTS.md). Gated behind the env
   /// var; has no effect on normal launches.
-  func renderPopoverToFile(_ path: String, delay: Double) {
+  func renderPopoverToFile(_ path: String, delay: Double, forceHelp: Bool = false) {
     openPopover()
+    // `MONICA_SHOT_HELP=1` support — forces the shortcuts panel (normally
+    // toggled by the footer's "?" button) open before the shot fires, so it
+    // can be screenshot-tested the same way row selection is via shot.sh's
+    // Down-arrow count.
+    if forceHelp { model.showingHelp = true }
     DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
       guard let window = self.popover.contentViewController?.view.window,
         let contentView = window.contentView,

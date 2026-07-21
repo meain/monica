@@ -32,6 +32,14 @@ final class AgentPickerModel: ObservableObject {
   @Published var composeTarget: AgentSession?
   @Published var composeText: String = ""
 
+  /// Toggled by the footer's "?" button — swaps the "LAST MESSAGE" preview
+  /// panel for a compact in-popover shortcuts reference (`MenuBarPopoverView`'s
+  /// `ShortcutsHelpSection`), so the keyboard shortcuts are reachable without
+  /// leaving the popover for Settings. The agent list itself stays visible
+  /// and fully interactive (arrow keys still move `selection`) — only the
+  /// bottom panel changes, same footprint as `LastMessageSection`.
+  @Published var showingHelp: Bool = false
+
   /// The last message actually sent via ⌘Return, recalled into an empty
   /// compose field with Up arrow — mirrors shell history recall for the
   /// common case of nudging an agent with the same follow-up twice.
@@ -93,6 +101,7 @@ final class AgentPickerModel: ObservableObject {
     filterText = ""
     composeTarget = nil
     composeText = ""
+    showingHelp = false
     installMonitor()
   }
 
@@ -281,6 +290,8 @@ final class AgentPickerModel: ObservableObject {
       case 53:  // escape
         if self.composeTarget != nil {
           self.cancelCompose()
+        } else if self.showingHelp {
+          self.showingHelp = false
         } else {
           self.cancel()
         }

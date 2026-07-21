@@ -37,8 +37,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Debug helper: MONICA_SHOT=/path renders the popover to a PNG and exits;
     // MONICA_SHOT_MENUBAR=/path (independently) renders just the menu bar
-    // glyph strip. Needs no Screen Recording permission — see
-    // MenuBarController.renderPopoverToFile.
+    // glyph strip; MONICA_SHOT_HELP=1 (with MONICA_SHOT) forces the in-popover
+    // shortcuts panel open before the shot fires. Needs no Screen Recording
+    // permission — see MenuBarController.renderPopoverToFile.
     let env = ProcessInfo.processInfo.environment
     if let menuBarShot = env["MONICA_SHOT_MENUBAR"] {
       DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
@@ -48,8 +49,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     if let shotPath = env["MONICA_SHOT"] {
       let delay = Double(env["MONICA_SHOT_DELAY"] ?? "1.5") ?? 1.5
+      let forceHelp = env["MONICA_SHOT_HELP"] == "1"
       DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-        self?.menuBar?.renderPopoverToFile(shotPath, delay: delay)
+        self?.menuBar?.renderPopoverToFile(shotPath, delay: delay, forceHelp: forceHelp)
       }
     }
   }

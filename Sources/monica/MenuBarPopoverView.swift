@@ -23,7 +23,11 @@ struct MenuBarPopoverView: View {
 
       if model.composeTarget == nil {
         Divider()
-        LastMessageSection(model: model)
+        if model.showingHelp {
+          ShortcutsHelpSection()
+        } else {
+          LastMessageSection(model: model)
+        }
       }
 
       Divider()
@@ -324,6 +328,55 @@ private struct MetaChipsRow: View {
   }
 }
 
+/// Shown in place of `LastMessageSection` while `model.showingHelp` is on
+/// (toggled by the footer's "?" button) — same header+scrollable-card
+/// footprint as the preview panel it replaces, so toggling help doesn't
+/// change the popover's overall height. Reuses `ShortcutRow`/`KeyCap` from
+/// `SettingsView.swift` so the two surfaces stay visually identical.
+private struct ShortcutsHelpSection: View {
+  @ObservedObject private var settings = AppSettings.shared
+
+  private var hotKeyLabel: String {
+    HotKeyFormatter.string(keyCode: settings.hotKeyCode, modifiers: settings.hotKeyModifiers)
+  }
+
+  private var jumpHotKeyLabel: String {
+    HotKeyFormatter.string(
+      keyCode: settings.jumpHotKeyCode, modifiers: settings.jumpHotKeyModifiers)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 5) {
+      Text("SHORTCUTS")
+        .font(.system(size: 9, weight: .semibold))
+        .tracking(0.6)
+        .foregroundStyle(.secondary)
+
+      ScrollView {
+        VStack(alignment: .leading, spacing: 6) {
+          ShortcutRow(title: "Open the picker", keys: [hotKeyLabel])
+          ShortcutRow(title: "Jump to next waiting", keys: [jumpHotKeyLabel])
+          ShortcutRow(title: "Filter and move", keys: ["type", "↑", "↓"])
+          ShortcutRow(title: "Switch to selected agent", keys: ["↩"])
+          ShortcutRow(title: "Send a message without switching", keys: ["⌘↩"])
+          ShortcutRow(title: "Copy last message", keys: ["⌘⇧C"])
+        }
+        .padding(8)
+        // Same reasoning as `LastMessageSection`'s preview card — see
+        // `ScrollbarSuppressor`'s doc comment.
+        .background(ScrollbarSuppressor())
+      }
+      .frame(height: 96)
+      .scrollIndicators(.hidden)
+      .background(
+        RoundedRectangle(cornerRadius: 7)
+          .fill(Color(nsColor: .quaternarySystemFill))
+      )
+    }
+    .popoverSection()
+  }
+}
+
 private struct FooterSection: View {
   @ObservedObject var model: AgentPickerModel
   let onSettings: () -> Void
@@ -391,6 +444,10 @@ private struct FooterSection: View {
       .font(.system(size: 11))
       .lineLimit(1)
       Spacer(minLength: 8)
+      FooterIconButton(
+        systemImage: "questionmark.circle", help: "Shortcuts", isActive: model.showingHelp,
+        action: { model.showingHelp.toggle() }
+      )
       FooterIconButton(systemImage: "gearshape", help: "Settings", action: onSettings)
       FooterIconButton(systemImage: "power", help: "Quit Monica", action: onQuit)
     }
@@ -420,6 +477,10 @@ private struct StatusChipText: View {
 private struct FooterIconButton: View {
   let systemImage: String
   let help: String
+  /// True while the button's toggled-on state is active (currently only the
+  /// "?" shortcuts button) — keeps a persistent tint so it's clear at a
+  /// glance which panel is showing, independent of hover.
+  var isActive: Bool = false
   let action: () -> Void
   @State private var hovering = false
 
@@ -427,11 +488,14 @@ private struct FooterIconButton: View {
     Button(action: action) {
       Image(systemName: systemImage)
         .font(.system(size: 12))
-        .foregroundStyle(hovering ? .primary : .secondary)
+        .foregroundStyle(isActive ? Color.accentColor : (hovering ? .primary : .secondary))
         .frame(width: 24, height: 22)
         .background(
           RoundedRectangle(cornerRadius: 5)
-            .fill(hovering ? Color.secondary.opacity(0.15) : Color.clear)
+            .fill(
+              isActive
+                ? Color.accentColor.opacity(0.15)
+                : (hovering ? Color.secondary.opacity(0.15) : Color.clear))
         )
         .contentShape(Rectangle())
     }
