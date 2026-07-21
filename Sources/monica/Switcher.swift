@@ -32,6 +32,13 @@ enum Switcher {
     TmuxCLI.run(["send-keys", "-t", session.paneId, text, "Enter"])
   }
 
+  /// Kills the tmux pane outright, ending whatever agent process is running
+  /// in it — offered from the row context menu for cleaning up stale/dead
+  /// sessions without leaving the popover.
+  static func killPane(_ session: AgentSession) {
+    TmuxCLI.run(["kill-pane", "-t", session.paneId])
+  }
+
   /// `#{session_name}:#{window_id}` for the given window, resolved across all
   /// sessions (a window's session can differ from a pane's session_group).
   private static func resolveSessionWindow(windowId: String) -> String? {

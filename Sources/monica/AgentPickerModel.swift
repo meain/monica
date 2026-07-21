@@ -32,6 +32,11 @@ final class AgentPickerModel: ObservableObject {
   @Published var composeTarget: AgentSession?
   @Published var composeText: String = ""
 
+  /// Set by the row context menu's "Kill Pane…" action; a shared
+  /// confirmation dialog (attached once at the list level, not per-row)
+  /// watches this rather than each row owning its own alert state.
+  @Published var pendingKillSession: AgentSession?
+
   /// Height of the scrollable agent list, computed by `MenuBarController`
   /// from the active screen's height each time the popover opens (capped
   /// at 60% of it) rather than a small fixed value.
@@ -142,6 +147,14 @@ final class AgentPickerModel: ObservableObject {
       selection = idx
     }
     commit()
+  }
+
+  /// Enters compose mode for a specific row — used by the row context
+  /// menu's "Send Message…" action, which may target a row other than the
+  /// currently-selected one.
+  func composeMessage(for session: AgentSession) {
+    select(session)
+    beginCompose()
   }
 
   private func filterChanged() {

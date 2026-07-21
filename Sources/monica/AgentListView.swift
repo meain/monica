@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Colors shared between the agent rows, the preview header, and the
@@ -156,6 +157,10 @@ struct AgentListView: View {
   let onSelect: (AgentSession) -> Void
   /// Double click: commit (switch tmux to this pane), mirroring Return.
   var onCommit: (AgentSession) -> Void = { _ in }
+  /// Context menu "Send Message…" — enters compose mode for this row.
+  var onSendMessage: (AgentSession) -> Void = { _ in }
+  /// Context menu "Kill Pane…" — the caller owns the confirmation step.
+  var onRequestKill: (AgentSession) -> Void = { _ in }
 
   var body: some View {
     if sessions.isEmpty {
@@ -182,9 +187,36 @@ struct AgentListView: View {
             // of firing both a select and a commit on the same click.
             .onTapGesture(count: 2) { onCommit(session) }
             .onTapGesture(count: 1) { onSelect(session) }
+            .contextMenu {
+              Button("Switch to Pane") { onCommit(session) }
+              Button("Send Message…") { onSendMessage(session) }
+              Divider()
+              Button("Copy Path") { copyToPasteboard(session.panePath) }
+              Button("Reveal in Finder") {
+                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: session.panePath)
+              }
+              Button("Copy Last Message") { copyLastMessage(of: session) }
+              Divider()
+              Button("Kill Pane…", role: .destructive) { onRequestKill(session) }
+            }
         }
       }
       .padding(.vertical, 4)
     }
+  }
+}
+
+private func copyToPasteboard(_ text: String) {
+  let pasteboard = NSPasteboard.general
+  pasteboard.clearContents()
+  pasteboard.setString(text, forType: .string)
+}
+
+/// Reads the row's transcript directly rather than relying on
+/// `AgentPickerModel.previewDetails`, since a context-menu action can
+/// target a row other than the currently-selected/previewed one.
+private func copyLastMessage(of session: AgentSession) {
+  if let text = TranscriptPreview.details(for: session).text {
+    copyToPasteboard(text)
   }
 }

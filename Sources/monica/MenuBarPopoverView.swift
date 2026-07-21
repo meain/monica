@@ -106,7 +106,9 @@ private struct AgentListSection: View {
           selection: model.selection,
           isFiltering: !model.filterText.isEmpty,
           onSelect: model.select,
-          onCommit: model.choose
+          onCommit: model.choose,
+          onSendMessage: model.composeMessage,
+          onRequestKill: { model.pendingKillSession = $0 }
         )
         // See `ScrollbarSuppressor`'s doc comment: `.scrollIndicators
         // (.hidden)` below doesn't override AppKit's classic
@@ -130,6 +132,26 @@ private struct AgentListSection: View {
       // still fully scrollable via trackpad/arrow keys without it.
       .scrollIndicators(.hidden)
       .onChange(of: model.selection) { scrollToSelection(proxy) }
+    }
+    // Shared across all rows rather than per-row @State, since a context
+    // menu's Button closure has no view identity of its own to hang state
+    // off of — `AgentPickerModel.pendingKillSession` is the single source
+    // of truth for which row (if any) is mid-confirmation.
+    .confirmationDialog(
+      "Kill this pane?",
+      isPresented: Binding(
+        get: { model.pendingKillSession != nil },
+        set: { if !$0 { model.pendingKillSession = nil } }
+      ),
+      presenting: model.pendingKillSession
+    ) { session in
+      Button("Kill Pane", role: .destructive) {
+        Switcher.killPane(session)
+        model.pendingKillSession = nil
+      }
+      Button("Cancel", role: .cancel) { model.pendingKillSession = nil }
+    } message: { session in
+      Text("This ends the tmux pane running \(session.project) — the agent process will be terminated.")
     }
   }
 
