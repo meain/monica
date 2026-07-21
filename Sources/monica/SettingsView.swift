@@ -212,15 +212,12 @@ struct SettingsView: View {
       }
 
       Section {
-        // `.recency` is listed first (it's the previous default) with a
-        // divider setting it apart from the rest, which start with
-        // `.statusPriority` — the actual current default (`AppSettings.init`).
-        // A dropdown rather than segmented control since eight modes don't
-        // fit a segmented row at this width.
+        // `.recency` is listed first (it's the previous default), then the
+        // rest starting with `.statusPriority` — the actual current default
+        // (`AppSettings.init`). A dropdown rather than segmented control
+        // since eight modes don't fit a segmented row at this width.
         Picker("Sort agents by", selection: $settings.sortMode) {
-          Text(SortMode.recency.label).tag(SortMode.recency)
-          Divider()
-          ForEach(SortMode.allCases.filter { $0 != .recency }) { mode in
+          ForEach(SortMode.allCases) { mode in
             Text(mode.label).tag(mode)
           }
         }
