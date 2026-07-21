@@ -91,6 +91,7 @@ struct AgentBadge: View {
 struct AgentRowView: View {
   let session: AgentSession
   let isSelected: Bool
+  @State private var isHovering = false
 
   var body: some View {
     HStack(alignment: .center, spacing: 8) {
@@ -119,7 +120,11 @@ struct AgentRowView: View {
     .padding(.vertical, 5)
     .background(
       RoundedRectangle(cornerRadius: 7)
-        .fill(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        .fill(
+          isSelected
+            ? Color.accentColor.opacity(0.2)
+            : (isHovering ? Color.secondary.opacity(0.08) : Color.clear)
+        )
     )
     .padding(.horizontal, PopoverLayout.rowOuterInset)
     .contentShape(Rectangle())
@@ -127,6 +132,7 @@ struct AgentRowView: View {
     // the tooltip carries the untruncated names plus the working directory
     // so a long project name is never fully hidden.
     .help("\(session.displayTitle) — \(session.displaySubtitle)\n\(session.panePath)")
+    .onHover { isHovering = $0 }
   }
 }
 
