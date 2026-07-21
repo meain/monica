@@ -14,7 +14,14 @@ final class HotKeyManager {
   // Arbitrary 4-char signature identifying monica's hotkeys to Carbon.
   private let signature: OSType = 0x6d6f_6e69
 
-  func register(keyCode: UInt32, modifiers: UInt32, action: @escaping () -> Void) {
+  /// Returns whether `RegisterEventHotKey` actually succeeded. Carbon fails
+  /// *silently* when the chord is already claimed by another app (e.g. a
+  /// Hammerspoon hyper-key binding, see AGENTS.md) — no error dialog, no
+  /// exception, the hotkey just never fires. Previously this status was
+  /// discarded entirely, so that failure mode was undiagnosable from inside
+  /// the app. Callers use the return value to surface a warning instead.
+  @discardableResult
+  func register(keyCode: UInt32, modifiers: UInt32, action: @escaping () -> Void) -> Bool {
     unregister()
     self.action = action
 
@@ -42,7 +49,9 @@ final class HotKeyManager {
     )
 
     let hotKeyID = EventHotKeyID(signature: signature, id: 1)
-    RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
+    let status = RegisterEventHotKey(
+      keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
+    return status == noErr
   }
 
   func unregister() {

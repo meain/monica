@@ -40,6 +40,13 @@ final class AppSettings: ObservableObject {
     didSet { UserDefaults.standard.set(hotKeyModifiers, forKey: Keys.hotKeyModifiers) }
   }
 
+  /// Not persisted — recomputed every time `AppDelegate` (re-)registers the
+  /// hotkey with Carbon. True means `RegisterEventHotKey` failed, almost
+  /// always because the chord is already claimed by another app (see
+  /// `HotKeyManager.register`'s doc comment). Settings shows a warning when
+  /// this is true instead of leaving a dead hotkey undiagnosed.
+  @Published var hotKeyRegistrationFailed: Bool = false
+
   /// Extra transcript context shown in the popover's "LAST MESSAGE" preview
   /// panel, when the transcript actually has it — all default to on.
   @Published var previewShowGitBranch: Bool {

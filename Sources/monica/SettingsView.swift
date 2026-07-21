@@ -118,6 +118,19 @@ struct SettingsView: View {
       }
 
       Section {
+        if settings.hotKeyRegistrationFailed {
+          Label {
+            Text(
+              "\"\(hotKeyLabel)\" didn't register — it's likely already claimed by another "
+                + "app (e.g. Hammerspoon). Pick a different shortcut below."
+            )
+            .font(.system(size: 11))
+            .fixedSize(horizontal: false, vertical: true)
+          } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .foregroundStyle(.orange)
+          }
+        }
         ShortcutRow(title: "Open the picker", keys: [hotKeyLabel])
         ShortcutRow(title: "Filter and move", keys: ["type", "↑", "↓"])
         ShortcutRow(title: "Switch to the selected agent", keys: ["↩"])

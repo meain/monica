@@ -53,12 +53,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   @MainActor
   private func registerHotKey() {
     guard let hotKeyManager else { return }
-    hotKeyManager.register(
+    let succeeded = hotKeyManager.register(
       keyCode: AppSettings.shared.hotKeyCode,
       modifiers: AppSettings.shared.hotKeyModifiers
     ) { [weak self] in
       self?.menuBar?.togglePopover()
     }
+    AppSettings.shared.hotKeyRegistrationFailed = !succeeded
   }
 
   @MainActor
