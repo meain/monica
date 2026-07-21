@@ -18,6 +18,18 @@ private struct AIStatusFile: Decodable {
   }
 }
 
+/// Most-recently-updated first — the `.recency` `SortMode`'s comparator,
+/// also reused as the tiebreak for every other mode.
+private func newerFirst(_ a: AgentSession, _ b: AgentSession) -> Bool {
+  (a.lastUpdated ?? .distantPast) > (b.lastUpdated ?? .distantPast)
+}
+
+/// Least-recently-updated first — the `.stalestFirst` `SortMode`'s
+/// comparator, and `.needsAttention`'s tiebreak within its waiting bucket.
+private func olderFirst(_ a: AgentSession, _ b: AgentSession) -> Bool {
+  (a.lastUpdated ?? .distantPast) < (b.lastUpdated ?? .distantPast)
+}
+
 /// Ports `,tmux-agent-scan` + the aistatus lookup from `,tmux-ai-agents` natively,
 /// so monica has no runtime dependency on the dotfiles scripts.
 @MainActor
@@ -83,13 +95,52 @@ final class AgentScanner: ObservableObject {
     // Settings change takes effect on the next tick without restarting.
     switch AppSettings.shared.sortMode {
     case .recency:
-      result.sort { ($0.lastUpdated ?? .distantPast) > ($1.lastUpdated ?? .distantPast) }
+      result.sort(by: newerFirst)
     case .statusPriority:
       result.sort {
         if $0.sortPriorityRank != $1.sortPriorityRank {
           return $0.sortPriorityRank > $1.sortPriorityRank
         }
-        return ($0.lastUpdated ?? .distantPast) > ($1.lastUpdated ?? .distantPast)
+        return newerFirst($0, $1)
+      }
+    case .stalestFirst:
+      result.sort(by: olderFirst)
+    case .alphabeticalProject:
+      result.sort {
+        let order = $0.project.localizedCaseInsensitiveCompare($1.project)
+        if order != .orderedSame { return order == .orderedAscending }
+        return newerFirst($0, $1)
+      }
+    case .groupedBySession:
+      result.sort {
+        let sessionOrder = $0.session.localizedCaseInsensitiveCompare($1.session)
+        if sessionOrder != .orderedSame { return sessionOrder == .orderedAscending }
+        let windowOrder = $0.windowName.localizedCaseInsensitiveCompare($1.windowName)
+        if windowOrder != .orderedSame { return windowOrder == .orderedAscending }
+        return newerFirst($0, $1)
+      }
+    case .groupedByAgentType:
+      result.sort {
+        let order = $0.agentName.localizedCaseInsensitiveCompare($1.agentName)
+        if order != .orderedSame { return order == .orderedAscending }
+        return newerFirst($0, $1)
+      }
+    case .needsAttention:
+      result.sort {
+        if $0.needsAttentionRank != $1.needsAttentionRank {
+          return $0.needsAttentionRank > $1.needsAttentionRank
+        }
+        // Waiting bucket (rank 2): longest-waiting first — most overdue
+        // for a response. Every other bucket falls back to plain recency.
+        if $0.needsAttentionRank == 2 { return olderFirst($0, $1) }
+        return newerFirst($0, $1)
+      }
+    case .yourActivity:
+      result.sort {
+        let a0 = Switcher.lastActivated($0.paneId) ?? .distantPast
+        let a1 = Switcher.lastActivated($1.paneId) ?? .distantPast
+        if a0 != a1 { return a0 > a1 }
+        return newerFirst($0, $1)
       }
     }
     sessions = result

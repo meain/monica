@@ -108,4 +108,20 @@ struct AgentSession: Identifiable, Equatable {
     case .working: return 2
     }
   }
+
+  /// Used by `AgentScanner.scan()`'s `.needsAttention` `SortMode`. Unlike
+  /// `sortPriorityRank` (which mirrors `AgentStatus`'s own
+  /// working > waiting > idle priority), this puts `waiting` on top —
+  /// an agent blocked on you is usually more urgent to see than one still
+  /// churning away unattended. Stale/quiet still override to the bottom,
+  /// same reasoning as `sortPriorityRank`/`displayGlyph`.
+  var needsAttentionRank: Int {
+    if isStale { return -2 }
+    if isQuiet { return -1 }
+    switch status {
+    case .idle: return 0
+    case .working: return 1
+    case .waiting: return 2
+    }
+  }
 }

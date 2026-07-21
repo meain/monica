@@ -8,7 +8,19 @@ import Foundation
 /// client". monica runs outside tmux entirely, so it has to name a client
 /// explicitly. See DESIGN.md's "Switching, precisely" section.
 enum Switcher {
+  /// Last time each pane was switched to via `activate` (not
+  /// `sendMessage`, which doesn't count as "visiting" a pane) — backs the
+  /// "Recently switched to" `SortMode`. In-memory only, not persisted
+  /// across launches, which is fine since it's meant to reflect this
+  /// session's own recent activity rather than a durable history.
+  private static var lastActivatedAt: [String: Date] = [:]
+
+  static func lastActivated(_ paneId: String) -> Date? {
+    lastActivatedAt[paneId]
+  }
+
   static func activate(_ session: AgentSession, targetApp: String) {
+    lastActivatedAt[session.paneId] = Date()
     TmuxCLI.run(["select-pane", "-t", session.paneId])
 
     guard let target = resolveSessionWindow(windowId: session.windowId) else {

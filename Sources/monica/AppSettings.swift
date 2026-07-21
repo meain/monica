@@ -6,9 +6,20 @@ import Foundation
 /// immediately on next popover open, which scans synchronously). Purely an
 /// initial-order concern: `AgentPickerModel.refreshData`'s "keep existing
 /// rows stable while the popover is open" behavior is unaffected either way.
+///
+/// Declaration order is display order in Settings' picker — `.recency` is
+/// listed first (it's the original/previous default) with a divider after
+/// it, then the rest starting with `.statusPriority`, which is now the
+/// actual default (see `AppSettings.init`).
 enum SortMode: String, CaseIterable, Identifiable {
   case recency
   case statusPriority
+  case stalestFirst
+  case alphabeticalProject
+  case groupedBySession
+  case groupedByAgentType
+  case needsAttention
+  case yourActivity
 
   var id: String { rawValue }
 
@@ -16,6 +27,40 @@ enum SortMode: String, CaseIterable, Identifiable {
     switch self {
     case .recency: return "Recency"
     case .statusPriority: return "Status"
+    case .stalestFirst: return "Stalest first"
+    case .alphabeticalProject: return "Project (A–Z)"
+    case .groupedBySession: return "Session"
+    case .groupedByAgentType: return "Agent type"
+    case .needsAttention: return "Needs attention"
+    case .yourActivity: return "Recently switched to"
+    }
+  }
+
+  /// Shown as the picker's footer — the modes answer different "which
+  /// agent first" questions, not just cosmetic reorderings, so this is
+  /// worth spelling out per-mode rather than one generic caption.
+  var detail: String {
+    switch self {
+    case .recency:
+      return "Whichever agent posted a status update most recently."
+    case .statusPriority:
+      return
+        "Working agents first, then waiting, then idle. Quiet/stale agents always sink to the bottom."
+    case .stalestFirst:
+      return "The agent you haven't checked on in the longest — the inverse of Recency."
+    case .alphabeticalProject:
+      return "By project name, A–Z. A fixed order that doesn't reshuffle as agents post updates."
+    case .groupedBySession:
+      return "Grouped by tmux session, then window."
+    case .groupedByAgentType:
+      return "Grouped by agent (claude, then pi)."
+    case .needsAttention:
+      return
+        "Longest-waiting agent first (most overdue for a response), then the most recently "
+        + "active working agent."
+    case .yourActivity:
+      return
+        "Whichever agent you personally switched to most recently, regardless of its own activity."
     }
   }
 }
@@ -129,6 +174,6 @@ final class AppSettings: ObservableObject {
     previewShowToolActivity =
       defaults.object(forKey: Keys.previewShowToolActivity) as? Bool ?? true
     sortMode =
-      defaults.string(forKey: Keys.sortMode).flatMap(SortMode.init(rawValue:)) ?? .recency
+      defaults.string(forKey: Keys.sortMode).flatMap(SortMode.init(rawValue:)) ?? .statusPriority
   }
 }

@@ -212,21 +212,24 @@ struct SettingsView: View {
       }
 
       Section {
+        // `.recency` is listed first (it's the previous default) with a
+        // divider setting it apart from the rest, which start with
+        // `.statusPriority` — the actual current default (`AppSettings.init`).
+        // A dropdown rather than segmented control since eight modes don't
+        // fit a segmented row at this width.
         Picker("Sort agents by", selection: $settings.sortMode) {
-          ForEach(SortMode.allCases) { mode in
+          Text(SortMode.recency.label).tag(SortMode.recency)
+          Divider()
+          ForEach(SortMode.allCases.filter { $0 != .recency }) { mode in
             Text(mode.label).tag(mode)
           }
         }
-        .pickerStyle(.segmented)
+        .pickerStyle(.menu)
       } footer: {
-        Text(
-          "Recency shows whichever agent posted a status update most recently. Status sorts "
-            + "working agents first, then waiting, then idle. Either way, quiet/stale agents "
-            + "always sink to the bottom."
-        )
-        .font(.caption)
-        .foregroundColor(.secondary)
-        .fixedSize(horizontal: false, vertical: true)
+        Text(settings.sortMode.detail)
+          .font(.caption)
+          .foregroundColor(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
       }
 
       Section {
