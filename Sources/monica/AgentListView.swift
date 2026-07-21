@@ -92,6 +92,11 @@ struct AgentBadge: View {
 struct AgentRowView: View {
   let session: AgentSession
   let isSelected: Bool
+  /// Fires on hover enter/exit — the list uses this to drive the preview
+  /// panel (mouse users get a live preview by hovering, mirroring arrow-key
+  /// navigation), while click keeps its original single-action behavior of
+  /// committing immediately.
+  var onHoverChanged: (Bool) -> Void = { _ in }
   @State private var isHovering = false
 
   var body: some View {
@@ -133,7 +138,10 @@ struct AgentRowView: View {
     // the tooltip carries the untruncated names plus the working directory
     // so a long project name is never fully hidden.
     .help("\(session.displayTitle) — \(session.displaySubtitle)\n\(session.panePath)")
-    .onHover { isHovering = $0 }
+    .onHover { hovering in
+      isHovering = hovering
+      onHoverChanged(hovering)
+    }
   }
 }
 
@@ -146,16 +154,17 @@ let agentRowHeight: CGFloat = 28
 let emptyListHeight: CGFloat = 96
 
 /// The shared list body: an empty-state placeholder, or one `AgentRowView`
-/// per session with click-to-select, double-click-to-commit.
+/// per session — hovering previews (mirroring arrow-key navigation), a
+/// click commits immediately (mirroring Return).
 struct AgentListView: View {
   let sessions: [AgentSession]
   var selection: Int = -1
   /// True when the list is empty *because of the filter text*, not because
   /// no agents are running — the two deserve different placeholders.
   var isFiltering: Bool = false
-  /// Single click: select + preview only, mirroring arrow-key navigation.
+  /// Hover: select + preview only, mirroring arrow-key navigation.
   let onSelect: (AgentSession) -> Void
-  /// Double click: commit (switch tmux to this pane), mirroring Return.
+  /// Click: commit (switch tmux to this pane), mirroring Return.
   var onCommit: (AgentSession) -> Void = { _ in }
   /// Context menu "Send Message…" — enters compose mode for this row.
   var onSendMessage: (AgentSession) -> Void = { _ in }
@@ -181,24 +190,25 @@ struct AgentListView: View {
     } else {
       VStack(spacing: 2) {
         ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
-          AgentRowView(session: session, isSelected: index == selection)
-            // Order matters: SwiftUI resolves the higher-count gesture
-            // first when both are attached, so double-click wins instead
-            // of firing both a select and a commit on the same click.
-            .onTapGesture(count: 2) { onCommit(session) }
-            .onTapGesture(count: 1) { onSelect(session) }
-            .contextMenu {
-              Button("Switch to Pane") { onCommit(session) }
-              Button("Send Message…") { onSendMessage(session) }
-              Divider()
-              Button("Copy Path") { copyToPasteboard(session.panePath) }
-              Button("Reveal in Finder") {
-                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: session.panePath)
-              }
-              Button("Copy Last Message") { copyLastMessage(of: session) }
-              Divider()
-              Button("Kill Pane…", role: .destructive) { onRequestKill(session) }
+          AgentRowView(
+            session: session, isSelected: index == selection,
+            onHoverChanged: { hovering in
+              if hovering { onSelect(session) }
             }
+          )
+          .onTapGesture { onCommit(session) }
+          .contextMenu {
+            Button("Switch to Pane") { onCommit(session) }
+            Button("Send Message…") { onSendMessage(session) }
+            Divider()
+            Button("Copy Path") { copyToPasteboard(session.panePath) }
+            Button("Reveal in Finder") {
+              NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: session.panePath)
+            }
+            Button("Copy Last Message") { copyLastMessage(of: session) }
+            Divider()
+            Button("Kill Pane…", role: .destructive) { onRequestKill(session) }
+          }
         }
       }
       .padding(.vertical, 4)
