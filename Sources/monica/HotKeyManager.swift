@@ -14,6 +14,23 @@ final class HotKeyManager {
   // Arbitrary 4-char signature identifying monica's hotkeys to Carbon.
   private let signature: OSType = 0x6d6f_6e69
 
+  /// Unique per instance — monica registers two independent hotkeys (the
+  /// main popover one and jump-to-next-waiting), each via its own
+  /// `HotKeyManager`. Every instance previously hardcoded `id: 1`, and the
+  /// event handler below never checked the fired event's id against its
+  /// own before acting — so whichever instance's `InstallEventHandler`
+  /// call happened to be *last* in Carbon's handler chain silently
+  /// swallowed every hotkey press for both chords, since each handler
+  /// unconditionally ran its own action and returned `noErr` without
+  /// forwarding the event. A unique id, checked before acting, fixes that.
+  private static var nextId: UInt32 = 1
+  private let id: UInt32
+
+  init() {
+    id = Self.nextId
+    Self.nextId += 1
+  }
+
   /// Returns whether `RegisterEventHotKey` actually succeeded. Carbon fails
   /// *silently* when the chord is already claimed by another app (e.g. a
   /// Hammerspoon hyper-key binding, see AGENTS.md) — no error dialog, no
@@ -32,7 +49,7 @@ final class HotKeyManager {
 
     InstallEventHandler(
       GetApplicationEventTarget(),
-      { _, eventRef, userData -> OSStatus in
+      { callRef, eventRef, userData -> OSStatus in
         guard let eventRef, let userData else { return noErr }
         var hotKeyID = EventHotKeyID()
         GetEventParameter(
@@ -40,6 +57,15 @@ final class HotKeyManager {
           nil, MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID
         )
         let manager = Unmanaged<HotKeyManager>.fromOpaque(userData).takeUnretainedValue()
+        // Every `HotKeyManager` installs its own handler on the same
+        // shared application event target, so this fires for *any*
+        // registered hotkey, not just this instance's — only act (and
+        // consume the event) when the id actually matches; otherwise
+        // forward it down the chain so the manager it does belong to
+        // gets a chance to handle it.
+        guard hotKeyID.signature == manager.signature, hotKeyID.id == manager.id else {
+          return CallNextEventHandler(callRef, eventRef)
+        }
         manager.action?()
         return noErr
       },
@@ -48,7 +74,7 @@ final class HotKeyManager {
       &eventHandler
     )
 
-    let hotKeyID = EventHotKeyID(signature: signature, id: 1)
+    let hotKeyID = EventHotKeyID(signature: signature, id: id)
     let status = RegisterEventHotKey(
       keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
     return status == noErr
