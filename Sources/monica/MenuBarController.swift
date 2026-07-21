@@ -16,6 +16,14 @@ final class MenuBarController {
   private let model = AgentPickerModel()
   private var titleTimer: Timer?
 
+  /// Whichever app was frontmost right before `openPopover()` activated
+  /// monica itself — restored on cancel/send-message so escaping the
+  /// popover hands focus back to whatever the user was actually in,
+  /// instead of leaving monica (an accessory app with no visible window)
+  /// as the active app. Not restored on commit, since `Switcher.activate`
+  /// deliberately raises the target terminal app instead.
+  private var previousApp: NSRunningApplication?
+
   init(scanner: AgentScanner, onOpenSettings: @escaping () -> Void) {
     self.scanner = scanner
     self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -30,13 +38,13 @@ final class MenuBarController {
 
     model.onCommit = { [weak self] session in
       Switcher.activate(session, targetApp: AppSettings.shared.targetApp)
-      self?.closePopover()
+      self?.closePopover(restorePreviousApp: false)
     }
     model.onSendMessage = { [weak self] session, text in
       Switcher.sendMessage(session, text: text)
-      self?.closePopover()
+      self?.closePopover(restorePreviousApp: true)
     }
-    model.onCancel = { [weak self] in self?.closePopover() }
+    model.onCancel = { [weak self] in self?.closePopover(restorePreviousApp: true) }
 
     if let button = statusItem.button {
       button.action = #selector(handleClick(_:))
@@ -46,7 +54,7 @@ final class MenuBarController {
     let content = MenuBarPopoverView(
       model: model,
       onSettings: { [weak self] in
-        self?.closePopover()
+        self?.closePopover(restorePreviousApp: false)
         onOpenSettings()
       },
       onQuit: { NSApp.terminate(nil) }
@@ -68,7 +76,7 @@ final class MenuBarController {
   /// window.
   func togglePopover() {
     if popover.isShown {
-      closePopover()
+      closePopover(restorePreviousApp: true)
     } else {
       openPopover()
     }
@@ -113,6 +121,7 @@ final class MenuBarController {
 
   private func openPopover() {
     guard let button = statusItem.button else { return }
+    previousApp = NSWorkspace.shared.frontmostApplication
     scanner.scan()
     model.activate(sessions: scanner.sessions)
     resizeForScreen()
@@ -130,9 +139,12 @@ final class MenuBarController {
     }
   }
 
-  private func closePopover() {
+  private func closePopover(restorePreviousApp: Bool) {
     model.deactivate()
     popover.performClose(nil)
+    if restorePreviousApp {
+      previousApp?.activate()
+    }
   }
 
   /// Sizes the list to how many agents are actually showing, not always to
