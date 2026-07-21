@@ -181,11 +181,11 @@ private struct LastMessageSection: View {
 
   /// True once at least one enabled detail toggle actually has data to
   /// show — keeps the chip row from reserving space when nothing's there
-  /// (e.g. every pi session, which never has a git branch).
+  /// (e.g. every pi session, which never has a git branch). Tool activity
+  /// gets its own line (like "You:") rather than a chip — see below.
   private var showsMetaRow: Bool {
     (settings.previewShowGitBranch && details.gitBranch != nil)
       || (settings.previewShowModel && details.model != nil)
-      || (settings.previewShowToolActivity && details.toolActivity != nil)
   }
 
   var body: some View {
@@ -220,6 +220,18 @@ private struct LastMessageSection: View {
         // elsewhere in this file.
         ScrollView(.horizontal, showsIndicators: false) {
           MetaChipsRow(details: details, settings: settings)
+        }
+      }
+
+      if settings.previewShowToolActivity, let tool = details.toolActivity {
+        HStack(alignment: .top, spacing: 4) {
+          Text("Tool:")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.tertiary)
+          Text(tool)
+            .font(.system(size: 10))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
         }
       }
 
@@ -291,8 +303,9 @@ private struct MetaChip: View {
   }
 }
 
-/// Git branch / model / last tool call, each independently toggleable from
-/// Settings and each only shown when the transcript actually had that field.
+/// Git branch / model, each independently toggleable from Settings and each
+/// only shown when the transcript actually had that field. Tool activity has
+/// its own line further down (see `LastMessageSection`), not a chip here.
 private struct MetaChipsRow: View {
   let details: TranscriptDetails
   @ObservedObject var settings: AppSettings
@@ -304,9 +317,6 @@ private struct MetaChipsRow: View {
       }
       if settings.previewShowModel, let model = details.model {
         MetaChip(systemImage: "cpu", text: model)
-      }
-      if settings.previewShowToolActivity, let tool = details.toolActivity {
-        MetaChip(systemImage: "wrench.and.screwdriver", text: tool)
       }
     }
   }
