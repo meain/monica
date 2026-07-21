@@ -139,14 +139,17 @@ let agentRowHeight: CGFloat = 28
 let emptyListHeight: CGFloat = 96
 
 /// The shared list body: an empty-state placeholder, or one `AgentRowView`
-/// per session with click-to-select.
+/// per session with click-to-select, double-click-to-commit.
 struct AgentListView: View {
   let sessions: [AgentSession]
   var selection: Int = -1
   /// True when the list is empty *because of the filter text*, not because
   /// no agents are running — the two deserve different placeholders.
   var isFiltering: Bool = false
+  /// Single click: select + preview only, mirroring arrow-key navigation.
   let onSelect: (AgentSession) -> Void
+  /// Double click: commit (switch tmux to this pane), mirroring Return.
+  var onCommit: (AgentSession) -> Void = { _ in }
 
   var body: some View {
     if sessions.isEmpty {
@@ -168,7 +171,11 @@ struct AgentListView: View {
       VStack(spacing: 2) {
         ForEach(Array(sessions.enumerated()), id: \.element.id) { index, session in
           AgentRowView(session: session, isSelected: index == selection)
-            .onTapGesture { onSelect(session) }
+            // Order matters: SwiftUI resolves the higher-count gesture
+            // first when both are attached, so double-click wins instead
+            // of firing both a select and a commit on the same click.
+            .onTapGesture(count: 2) { onCommit(session) }
+            .onTapGesture(count: 1) { onSelect(session) }
         }
       }
       .padding(.vertical, 4)

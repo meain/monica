@@ -105,7 +105,8 @@ private struct AgentListSection: View {
           sessions: model.filteredSessions,
           selection: model.selection,
           isFiltering: !model.filterText.isEmpty,
-          onSelect: model.choose
+          onSelect: model.select,
+          onCommit: model.choose
         )
         // See `ScrollbarSuppressor`'s doc comment: `.scrollIndicators
         // (.hidden)` below doesn't override AppKit's classic

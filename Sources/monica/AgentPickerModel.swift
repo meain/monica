@@ -123,6 +123,16 @@ final class AgentPickerModel: ObservableObject {
     selection = min(max(0, selection + delta), list.count - 1)
   }
 
+  /// Selects a row (updating the preview) without committing — used for a
+  /// single click, so mouse users can preview a row the same way arrow-key
+  /// navigation already does, instead of every click instantly switching
+  /// tmux panes. Double-click still commits (see `choose`).
+  func select(_ session: AgentSession) {
+    if let idx = filteredSessions.firstIndex(of: session) {
+      selection = idx
+    }
+  }
+
   func choose(_ session: AgentSession) {
     if let idx = filteredSessions.firstIndex(of: session) {
       selection = idx
