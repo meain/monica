@@ -64,8 +64,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   @MainActor
   private func showSettings() {
+    guard let scanner else { return }
     if settingsWindow == nil {
-      settingsWindow = SettingsWindowController(settings: AppSettings.shared) { [weak self] in
+      settingsWindow = SettingsWindowController(settings: AppSettings.shared, scanner: scanner) {
+        [weak self] in
         self?.registerHotKey()
       }
     }

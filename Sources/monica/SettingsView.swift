@@ -44,6 +44,10 @@ private struct LegendRow: View {
   let color: Color
   let name: String
   let detail: String
+  /// Live count of currently-running agents in this category — turns the
+  /// legend from a static reference into a mini live dashboard. Hidden
+  /// (rather than showing "0") when there's nothing to report.
+  var count: Int = 0
 
   var body: some View {
     HStack(spacing: 10) {
@@ -58,12 +62,21 @@ private struct LegendRow: View {
         .font(.system(size: 11))
         .foregroundStyle(.secondary)
       Spacer()
+      if count > 0 {
+        Text("\(count)")
+          .font(.system(size: 10, weight: .medium))
+          .foregroundStyle(.secondary)
+          .padding(.horizontal, 6)
+          .padding(.vertical, 1)
+          .background(Capsule().fill(Color.secondary.opacity(0.12)))
+      }
     }
   }
 }
 
 struct SettingsView: View {
   @ObservedObject var settings: AppSettings
+  @ObservedObject var scanner: AgentScanner
   let onHotKeyChanged: () -> Void
 
   private var version: String? {
@@ -72,6 +85,25 @@ struct SettingsView: View {
 
   private var hotKeyLabel: String {
     HotKeyFormatter.string(keyCode: settings.hotKeyCode, modifiers: settings.hotKeyModifiers)
+  }
+
+  // Same categorization `MenuBarPopoverView`'s footer summary uses: working/
+  // waiting/idle all require !isStale && !isQuiet, since those two states
+  // override the glyph regardless of the underlying status.
+  private var workingCount: Int {
+    scanner.sessions.filter { $0.status == .working && !$0.isStale && !$0.isQuiet }.count
+  }
+  private var waitingCount: Int {
+    scanner.sessions.filter { $0.status == .waiting && !$0.isStale && !$0.isQuiet }.count
+  }
+  private var idleCount: Int {
+    scanner.sessions.filter { $0.status == .idle && !$0.isStale && !$0.isQuiet }.count
+  }
+  private var quietCount: Int {
+    scanner.sessions.filter { $0.isQuiet && !$0.isStale }.count
+  }
+  private var staleCount: Int {
+    scanner.sessions.filter { $0.isStale }.count
   }
 
   var body: some View {
@@ -145,15 +177,21 @@ struct SettingsView: View {
       }
 
       Section {
-        LegendRow(glyph: "▶", color: .green, name: "Working", detail: "Running a task right now")
-        LegendRow(glyph: "●", color: .yellow, name: "Waiting", detail: "Needs your input")
-        LegendRow(glyph: "○", color: .secondary, name: "Idle", detail: "Nothing in progress")
+        LegendRow(
+          glyph: "▶", color: .green, name: "Working", detail: "Running a task right now",
+          count: workingCount)
+        LegendRow(
+          glyph: "●", color: .yellow, name: "Waiting", detail: "Needs your input",
+          count: waitingCount)
+        LegendRow(
+          glyph: "○", color: .secondary, name: "Idle", detail: "Nothing in progress",
+          count: idleCount)
         LegendRow(
           glyph: "●", color: .secondary, name: "Quiet",
-          detail: "No status updates for 15+ minutes")
+          detail: "No status updates for 15+ minutes", count: quietCount)
         LegendRow(
           glyph: "◌", color: .secondary, name: "Stale",
-          detail: "No status updates for over 3 hours")
+          detail: "No status updates for over 3 hours", count: staleCount)
       } header: {
         Text("Status legend")
       } footer: {
@@ -246,8 +284,10 @@ struct SettingsView: View {
 
 @MainActor
 final class SettingsWindowController: NSWindowController {
-  convenience init(settings: AppSettings, onHotKeyChanged: @escaping () -> Void) {
-    let view = SettingsView(settings: settings, onHotKeyChanged: onHotKeyChanged)
+  convenience init(
+    settings: AppSettings, scanner: AgentScanner, onHotKeyChanged: @escaping () -> Void
+  ) {
+    let view = SettingsView(settings: settings, scanner: scanner, onHotKeyChanged: onHotKeyChanged)
     let hosting = NSHostingController(rootView: view)
     let window = NSWindow(contentViewController: hosting)
     window.title = "Monica Settings"
