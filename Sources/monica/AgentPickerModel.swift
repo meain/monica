@@ -162,6 +162,16 @@ final class AgentPickerModel: ObservableObject {
     beginCompose()
   }
 
+  /// Copies the selected row's "Last message" preview text — bound to
+  /// ⌘⇧C (see `installMonitor`) and to a header button in
+  /// `LastMessageSection`, so it's reachable by keyboard or mouse.
+  func copyPreviewToPasteboard() {
+    guard let text = previewDetails.text, !text.isEmpty else { return }
+    let pasteboard = NSPasteboard.general
+    pasteboard.clearContents()
+    pasteboard.setString(text, forType: .string)
+  }
+
   private func filterChanged() {
     let count = filteredSessions.count
     guard count > 0 else {
@@ -263,6 +273,18 @@ final class AgentPickerModel: ObservableObject {
           self.cancel()
         }
         return nil
+      case 8:  // C
+        // ⌘⇧C copies the preview text — only outside compose mode, so it
+        // doesn't fight a real ⌘⇧C keyboard shortcut some other context
+        // might expect while typing a message (and there's nothing to
+        // copy from there anyway, the compose field has its own text).
+        if self.composeTarget == nil, event.modifierFlags.contains(.command),
+          event.modifierFlags.contains(.shift)
+        {
+          self.copyPreviewToPasteboard()
+          return nil
+        }
+        return event
       default: return event
       }
     }

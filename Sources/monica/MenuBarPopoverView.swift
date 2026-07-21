@@ -202,6 +202,15 @@ private struct LastMessageSection: View {
             .foregroundStyle(.tertiary)
             .lineLimit(1)
         }
+        if details.text != nil {
+          Button(action: model.copyPreviewToPasteboard) {
+            Image(systemName: "doc.on.doc")
+              .font(.system(size: 9))
+              .foregroundStyle(.tertiary)
+          }
+          .buttonStyle(.plain)
+          .help("Copy last message (⌘⇧C)")
+        }
       }
 
       if showsMetaRow {
