@@ -32,6 +32,11 @@ final class AgentPickerModel: ObservableObject {
   @Published var composeTarget: AgentSession?
   @Published var composeText: String = ""
 
+  /// The last message actually sent via ⌘Return, recalled into an empty
+  /// compose field with Up arrow — mirrors shell history recall for the
+  /// common case of nudging an agent with the same follow-up twice.
+  private var lastSentMessage: String = ""
+
   /// Set by the row context menu's "Kill Pane…" action; a shared
   /// confirmation dialog (attached once at the list level, not per-row)
   /// watches this rather than each row owning its own alert state.
@@ -209,6 +214,7 @@ final class AgentPickerModel: ObservableObject {
       cancelCompose()
       return
     }
+    lastSentMessage = text
     onSendMessage?(target, text)
   }
 
@@ -218,7 +224,17 @@ final class AgentPickerModel: ObservableObject {
       guard let self else { return event }
       switch event.keyCode {
       case 126:  // up
-        guard self.composeTarget == nil else { return event }
+        if self.composeTarget != nil {
+          // Recall the last sent message into an empty field, mirroring
+          // shell history — but only when the field is empty, so this
+          // doesn't fight normal cursor-up movement inside a non-empty
+          // multi-line message.
+          if self.composeText.isEmpty, !self.lastSentMessage.isEmpty {
+            self.composeText = self.lastSentMessage
+            return nil
+          }
+          return event
+        }
         self.move(-1)
         return nil
       case 125:  // down
