@@ -78,6 +78,7 @@ struct SettingsView: View {
   @ObservedObject var settings: AppSettings
   @ObservedObject var scanner: AgentScanner
   let onHotKeyChanged: () -> Void
+  let onJumpHotKeyChanged: () -> Void
 
   private var version: String? {
     Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
@@ -85,6 +86,11 @@ struct SettingsView: View {
 
   private var hotKeyLabel: String {
     HotKeyFormatter.string(keyCode: settings.hotKeyCode, modifiers: settings.hotKeyModifiers)
+  }
+
+  private var jumpHotKeyLabel: String {
+    HotKeyFormatter.string(
+      keyCode: settings.jumpHotKeyCode, modifiers: settings.jumpHotKeyModifiers)
   }
 
   // Same categorization `MenuBarPopoverView`'s footer summary uses: working/
@@ -236,9 +242,40 @@ struct SettingsView: View {
       }
 
       Section {
-        KeyRecorderView(settings: settings, onChange: onHotKeyChanged)
+        KeyRecorderView(
+          keyCode: $settings.hotKeyCode, modifiers: $settings.hotKeyModifiers,
+          onChange: onHotKeyChanged)
       } header: {
         Text("Global hotkey")
+      }
+
+      Section {
+        if settings.jumpHotKeyRegistrationFailed {
+          Label {
+            Text(
+              "\"\(jumpHotKeyLabel)\" didn't register — it's likely already claimed by "
+                + "another app. Pick a different shortcut below."
+            )
+            .font(.system(size: 11))
+            .fixedSize(horizontal: false, vertical: true)
+          } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .foregroundStyle(.orange)
+          }
+        }
+        KeyRecorderView(
+          keyCode: $settings.jumpHotKeyCode, modifiers: $settings.jumpHotKeyModifiers,
+          onChange: onJumpHotKeyChanged)
+      } header: {
+        Text("Jump to next waiting agent")
+      } footer: {
+        Text(
+          "Switches straight to the next agent that's waiting on you, cycling on repeated "
+            + "presses — no popover needed."
+        )
+        .font(.caption)
+        .foregroundColor(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
       }
 
       Section {
@@ -285,9 +322,13 @@ struct SettingsView: View {
 @MainActor
 final class SettingsWindowController: NSWindowController {
   convenience init(
-    settings: AppSettings, scanner: AgentScanner, onHotKeyChanged: @escaping () -> Void
+    settings: AppSettings, scanner: AgentScanner,
+    onHotKeyChanged: @escaping () -> Void,
+    onJumpHotKeyChanged: @escaping () -> Void
   ) {
-    let view = SettingsView(settings: settings, scanner: scanner, onHotKeyChanged: onHotKeyChanged)
+    let view = SettingsView(
+      settings: settings, scanner: scanner, onHotKeyChanged: onHotKeyChanged,
+      onJumpHotKeyChanged: onJumpHotKeyChanged)
     let hosting = NSHostingController(rootView: view)
     let window = NSWindow(contentViewController: hosting)
     window.title = "Monica Settings"

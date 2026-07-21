@@ -8,8 +8,14 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private var scanner: AgentScanner?
   private var hotKeyManager: HotKeyManager?
+  private var jumpHotKeyManager: HotKeyManager?
   private var menuBar: MenuBarController?
   private var settingsWindow: SettingsWindowController?
+
+  /// Which pane the jump-to-next-waiting hotkey last switched to, so
+  /// repeated presses cycle forward through `.waiting` agents instead of
+  /// always landing on the first one.
+  private var lastJumpedPaneId: String?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     setupMenu()
@@ -18,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     self.scanner = scanner
     let hotKeyManager = HotKeyManager()
     self.hotKeyManager = hotKeyManager
+    let jumpHotKeyManager = HotKeyManager()
+    self.jumpHotKeyManager = jumpHotKeyManager
 
     menuBar = MenuBarController(scanner: scanner) { [weak self] in
       self?.showSettings()
@@ -25,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     scanner.start(interval: AppSettings.shared.pollInterval)
     registerHotKey()
+    registerJumpHotKey()
 
     // Debug helper: MONICA_SHOT=/path renders the popover to a PNG and exits;
     // MONICA_SHOT_MENUBAR=/path (independently) renders just the menu bar
@@ -62,6 +71,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     AppSettings.shared.hotKeyRegistrationFailed = !succeeded
   }
 
+  /// Bypasses the popover entirely: cycles through non-stale `.waiting`
+  /// agents (in the scanner's most-recently-updated-first order) on each
+  /// press, wrapping back to the first once the end is reached or the
+  /// previously-jumped-to pane is no longer waiting.
+  @MainActor
+  private func registerJumpHotKey() {
+    guard let jumpHotKeyManager else { return }
+    let succeeded = jumpHotKeyManager.register(
+      keyCode: AppSettings.shared.jumpHotKeyCode,
+      modifiers: AppSettings.shared.jumpHotKeyModifiers
+    ) { [weak self] in
+      self?.jumpToNextWaiting()
+    }
+    AppSettings.shared.jumpHotKeyRegistrationFailed = !succeeded
+  }
+
+  @MainActor
+  private func jumpToNextWaiting() {
+    guard let scanner else { return }
+    let waiting = scanner.sessions.filter { $0.status == .waiting && !$0.isStale }
+    guard !waiting.isEmpty else { return }
+    let nextIndex: Int
+    if let lastJumpedPaneId, let idx = waiting.firstIndex(where: { $0.paneId == lastJumpedPaneId })
+    {
+      nextIndex = (idx + 1) % waiting.count
+    } else {
+      nextIndex = 0
+    }
+    let target = waiting[nextIndex]
+    lastJumpedPaneId = target.paneId
+    Switcher.activate(target, targetApp: AppSettings.shared.targetApp)
+  }
+
   @MainActor
   private func showSettings() {
     guard let scanner else { return }
@@ -69,6 +111,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       settingsWindow = SettingsWindowController(settings: AppSettings.shared, scanner: scanner) {
         [weak self] in
         self?.registerHotKey()
+      } onJumpHotKeyChanged: { [weak self] in
+        self?.registerJumpHotKey()
       }
     }
     settingsWindow?.show()

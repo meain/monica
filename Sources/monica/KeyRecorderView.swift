@@ -39,35 +39,37 @@ final class KeyRecorderModel: ObservableObject {
   }
 }
 
+/// Bound to whichever keyCode/modifiers pair the caller passes — used for
+/// both the main popover hotkey and the jump-to-next-waiting hotkey, so the
+/// recording UI/logic isn't duplicated per hotkey.
 struct KeyRecorderView: View {
-  @ObservedObject var settings: AppSettings
+  @Binding var keyCode: UInt32
+  @Binding var modifiers: UInt32
   let onChange: () -> Void
   @StateObject private var recorder = KeyRecorderModel()
 
   var body: some View {
     HStack {
-      Text(
-        HotKeyFormatter.string(keyCode: settings.hotKeyCode, modifiers: settings.hotKeyModifiers)
-      )
-      .font(.system(.body, design: .monospaced))
-      .padding(.horizontal, 8)
-      .padding(.vertical, 4)
-      .background(
-        RoundedRectangle(cornerRadius: 5)
-          .fill(Color.secondary.opacity(0.1))
-      )
-      .overlay(
-        RoundedRectangle(cornerRadius: 5)
-          .strokeBorder(
-            recorder.isRecording ? Color.red.opacity(0.6) : Color.secondary.opacity(0.25),
-            lineWidth: recorder.isRecording ? 1 : 0.5
-          )
-      )
+      Text(HotKeyFormatter.string(keyCode: keyCode, modifiers: modifiers))
+        .font(.system(.body, design: .monospaced))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+          RoundedRectangle(cornerRadius: 5)
+            .fill(Color.secondary.opacity(0.1))
+        )
+        .overlay(
+          RoundedRectangle(cornerRadius: 5)
+            .strokeBorder(
+              recorder.isRecording ? Color.red.opacity(0.6) : Color.secondary.opacity(0.25),
+              lineWidth: recorder.isRecording ? 1 : 0.5
+            )
+        )
       Spacer()
       Button {
-        recorder.startRecording { keyCode, modifiers in
-          settings.hotKeyCode = keyCode
-          settings.hotKeyModifiers = modifiers
+        recorder.startRecording { newKeyCode, newModifiers in
+          keyCode = newKeyCode
+          modifiers = newModifiers
           onChange()
         }
       } label: {

@@ -11,6 +11,8 @@ final class AppSettings: ObservableObject {
     static let pollInterval = "monica.pollInterval"
     static let hotKeyCode = "monica.hotKeyCode"
     static let hotKeyModifiers = "monica.hotKeyModifiers"
+    static let jumpHotKeyCode = "monica.jumpHotKeyCode"
+    static let jumpHotKeyModifiers = "monica.jumpHotKeyModifiers"
     static let previewShowGitBranch = "monica.previewShowGitBranch"
     static let previewShowModel = "monica.previewShowModel"
     static let previewShowLastPrompt = "monica.previewShowLastPrompt"
@@ -47,6 +49,22 @@ final class AppSettings: ObservableObject {
   /// this is true instead of leaving a dead hotkey undiagnosed.
   @Published var hotKeyRegistrationFailed: Bool = false
 
+  /// A second, independent global hotkey that jumps straight to the next
+  /// `.waiting` agent (cycling on repeated presses) without opening the
+  /// popover at all — default ⌃⌥⇧W, same reasoning as `hotKeyCode`'s doc
+  /// comment for avoiding the Hammerspoon hyper-key prefix.
+  @Published var jumpHotKeyCode: UInt32 {
+    didSet { UserDefaults.standard.set(jumpHotKeyCode, forKey: Keys.jumpHotKeyCode) }
+  }
+
+  @Published var jumpHotKeyModifiers: UInt32 {
+    didSet { UserDefaults.standard.set(jumpHotKeyModifiers, forKey: Keys.jumpHotKeyModifiers) }
+  }
+
+  /// Not persisted — same purpose as `hotKeyRegistrationFailed` but for the
+  /// jump-to-next-waiting hotkey.
+  @Published var jumpHotKeyRegistrationFailed: Bool = false
+
   /// Extra transcript context shown in the popover's "LAST MESSAGE" preview
   /// panel, when the transcript actually has it — all default to on.
   @Published var previewShowGitBranch: Bool {
@@ -76,6 +94,10 @@ final class AppSettings: ObservableObject {
     hotKeyCode = defaults.object(forKey: Keys.hotKeyCode) as? UInt32 ?? UInt32(kVK_ANSI_A)
     hotKeyModifiers =
       defaults.object(forKey: Keys.hotKeyModifiers) as? UInt32
+      ?? UInt32(controlKey | optionKey | shiftKey)
+    jumpHotKeyCode = defaults.object(forKey: Keys.jumpHotKeyCode) as? UInt32 ?? UInt32(kVK_ANSI_W)
+    jumpHotKeyModifiers =
+      defaults.object(forKey: Keys.jumpHotKeyModifiers) as? UInt32
       ?? UInt32(controlKey | optionKey | shiftKey)
     previewShowGitBranch = defaults.object(forKey: Keys.previewShowGitBranch) as? Bool ?? true
     previewShowModel = defaults.object(forKey: Keys.previewShowModel) as? Bool ?? true
