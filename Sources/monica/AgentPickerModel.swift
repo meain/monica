@@ -253,11 +253,23 @@ final class AgentPickerModel: ObservableObject {
         return nil
       case 36, 76:  // return / enter
         if self.composeTarget != nil {
-          // Shift+Return: let the event through so the multi-line compose
-          // field inserts a newline itself, instead of swallowing it here
-          // like every other Return. Plain Return still sends.
+          // Shift+Return: insert a newline ourselves rather than letting the
+          // raw event through. `TextField(axis: .vertical)` isn't backed by
+          // a real multi-line NSTextView, and empirically its field editor
+          // resolves an unhandled Shift+Return to a select-all-like action
+          // instead of a line break — confirmed by driving keystrokes into
+          // a live compose field and watching `composeText` change: typing
+          // "hello", Shift+Return, then "world" produced "world", not
+          // "hello\nworld" (the selected "hello" got replaced). Inserting
+          // via the field editor's own `insertText` keeps normal cursor/
+          // selection-replace semantics, same as any other typed character.
           if event.modifierFlags.contains(.shift) {
-            return event
+            if let textView = NSApp.keyWindow?.firstResponder as? NSTextView {
+              textView.insertText("\n", replacementRange: textView.selectedRange())
+            } else {
+              self.composeText += "\n"
+            }
+            return nil
           }
           self.sendComposedMessage()
         } else if event.modifierFlags.contains(.command) {
