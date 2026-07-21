@@ -26,11 +26,31 @@ enum Switcher {
   }
 
   /// Sends text + Enter directly to the pane without switching focus to it
-  /// — same as `,tmux-ai-agents`'s `alt-enter` binding
-  /// (`tmux send-keys -t {3} "$msg" Enter`).
+  /// — same intent as `,tmux-ai-agents`'s `alt-enter` binding, but via
+  /// `set-buffer`/`paste-buffer -p` rather than `send-keys` with a literal
+  /// string argument. `send-keys` simulates each character as a real
+  /// keystroke, so an embedded newline (now possible via the popover's
+  /// multi-line compose field, Shift+Return) would itself act as a
+  /// premature Return partway through the message — confirmed with a
+  /// throwaway tmux pane running bash/python3, where a literal embedded
+  /// newline executes the first line immediately regardless of send-keys
+  /// vs. plain paste-buffer. `-p` requests bracketed-paste wrapping
+  /// (`\e[200~...\e[201~`), which is a documented no-op unless the target
+  /// program has itself asked the terminal for bracketed paste — so this
+  /// is a no-regression change for plain shells (same behavior confirmed
+  /// above) and a real fix for TUIs that do request it, which Claude
+  /// Code's and pi's Ink-based input boxes are expected to, being
+  /// interactive multi-line-capable prompts themselves.
   static func sendMessage(_ session: AgentSession, text: String) {
-    TmuxCLI.run(["send-keys", "-t", session.paneId, text, "Enter"])
+    TmuxCLI.run(["set-buffer", "-b", messageBufferName, text])
+    TmuxCLI.run(["paste-buffer", "-p", "-b", messageBufferName, "-d", "-t", session.paneId])
+    TmuxCLI.run(["send-keys", "-t", session.paneId, "Enter"])
   }
+
+  /// Named (rather than the default) tmux buffer, so this doesn't clobber
+  /// whatever the user has in their own default paste buffer — deleted
+  /// after use via `paste-buffer -d`.
+  private static let messageBufferName = "monica-send-message"
 
   /// Kills the tmux pane outright, ending whatever agent process is running
   /// in it — offered from the row context menu for cleaning up stale/dead

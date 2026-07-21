@@ -78,13 +78,20 @@ private struct ComposeFieldSection: View {
             .lineLimit(1)
         }
         Spacer(minLength: 8)
-        Text("↩ send · esc cancel")
+        Text("↩ send · ⇧↩ newline · esc cancel")
           .font(.system(size: 10))
           .foregroundStyle(.tertiary)
       }
-      TextField("Type a message…", text: $model.composeText)
+      // `axis: .vertical` lets the field grow for a multi-line message
+      // (up to 5 lines before it scrolls internally) — plain Return still
+      // sends via the keydown monitor in AgentPickerModel, which only lets
+      // Return through to this field (rather than swallowing it) when
+      // Shift is held, so Shift+Return is what actually reaches here to
+      // insert a newline.
+      TextField("Type a message…", text: $model.composeText, axis: .vertical)
         .textFieldStyle(.plain)
         .font(.system(size: 14))
+        .lineLimit(1...5)
         .focused(isFocused)
     }
     .popoverSection(vertical: 8)

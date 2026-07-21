@@ -227,6 +227,12 @@ final class AgentPickerModel: ObservableObject {
         return nil
       case 36, 76:  // return / enter
         if self.composeTarget != nil {
+          // Shift+Return: let the event through so the multi-line compose
+          // field inserts a newline itself, instead of swallowing it here
+          // like every other Return. Plain Return still sends.
+          if event.modifierFlags.contains(.shift) {
+            return event
+          }
           self.sendComposedMessage()
         } else if event.modifierFlags.contains(.command) {
           self.beginCompose()
