@@ -10,19 +10,19 @@ struct MenuBarPopoverView: View {
   @FocusState private var searchFocused: Bool
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
+    // Each section wraps itself in `.popoverCard()`, so this stack is just
+    // the floating-card group order — spacing between them (instead of
+    // `Divider()` lines) is what now marks a section boundary.
+    VStack(alignment: .leading, spacing: PopoverLayout.cardSpacing) {
       if model.composeTarget != nil {
         ComposeFieldSection(model: model, isFocused: $searchFocused)
       } else {
         SearchFieldSection(model: model, isFocused: $searchFocused)
       }
 
-      Divider()
-
       AgentListSection(model: model)
 
       if model.composeTarget == nil {
-        Divider()
         if model.showingHelp {
           ShortcutsHelpSection()
         } else {
@@ -30,10 +30,9 @@ struct MenuBarPopoverView: View {
         }
       }
 
-      Divider()
-
       FooterSection(model: model, onSettings: onSettings, onQuit: onQuit)
     }
+    .padding(PopoverLayout.outerPadding)
     .frame(width: PopoverLayout.width)
     .onAppear { searchFocused = true }
     .onChange(of: model.focusTick) { searchFocused = true }
@@ -63,6 +62,7 @@ private struct SearchFieldSection: View {
       }
     }
     .popoverSection(vertical: 9)
+    .popoverCard()
   }
 }
 
@@ -99,10 +99,9 @@ private struct ComposeFieldSection: View {
         .focused(isFocused)
     }
     .popoverSection(vertical: 8)
-    // Applied outside `popoverSection()` so the tint bleeds to the
-    // popover edges — a full-width banner that makes compose mode
-    // unmistakably a different state from search.
-    .background(Color.accentColor.opacity(0.07))
+    // Accent-tinted card (instead of the neutral fill every other section
+    // gets) so compose mode is unmistakably a different state from search.
+    .popoverCard(tint: .accentColor)
   }
 }
 
@@ -144,6 +143,7 @@ private struct AgentListSection: View {
       .scrollIndicators(.hidden)
       .onChange(of: model.selection) { scrollToSelection(proxy) }
     }
+    .popoverCard()
     // Shared across all rows rather than per-row @State, since a context
     // menu's Button closure has no view identity of its own to hang state
     // off of — `AgentPickerModel.pendingKillSession` is the single source
@@ -196,7 +196,10 @@ private struct LastMessageSection: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 5) {
-      HStack(spacing: 6) {
+      HStack(spacing: 5) {
+        Image(systemName: "quote.bubble")
+          .font(.system(size: 9, weight: .semibold))
+          .foregroundStyle(.secondary)
         Text("LAST MESSAGE")
           .font(.system(size: 9, weight: .semibold))
           .tracking(0.6)
@@ -279,11 +282,12 @@ private struct LastMessageSection: View {
       .frame(height: 96)
       .scrollIndicators(.hidden)
       .background(
-        RoundedRectangle(cornerRadius: 7)
-          .fill(Color(nsColor: .quaternarySystemFill))
+        RoundedRectangle(cornerRadius: PopoverLayout.innerCornerRadius)
+          .fill(Color.primary.opacity(0.05))
       )
     }
     .popoverSection()
+    .popoverCard()
   }
 }
 
@@ -347,10 +351,15 @@ private struct ShortcutsHelpSection: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 5) {
-      Text("SHORTCUTS")
-        .font(.system(size: 9, weight: .semibold))
-        .tracking(0.6)
-        .foregroundStyle(.secondary)
+      HStack(spacing: 5) {
+        Image(systemName: "keyboard")
+          .font(.system(size: 9, weight: .semibold))
+          .foregroundStyle(.secondary)
+        Text("SHORTCUTS")
+          .font(.system(size: 9, weight: .semibold))
+          .tracking(0.6)
+          .foregroundStyle(.secondary)
+      }
 
       ScrollView {
         VStack(alignment: .leading, spacing: 6) {
@@ -369,11 +378,12 @@ private struct ShortcutsHelpSection: View {
       .frame(height: 96)
       .scrollIndicators(.hidden)
       .background(
-        RoundedRectangle(cornerRadius: 7)
-          .fill(Color(nsColor: .quaternarySystemFill))
+        RoundedRectangle(cornerRadius: PopoverLayout.innerCornerRadius)
+          .fill(Color.primary.opacity(0.05))
       )
     }
     .popoverSection()
+    .popoverCard()
   }
 }
 
@@ -452,6 +462,7 @@ private struct FooterSection: View {
       FooterIconButton(systemImage: "power", help: "Quit Monica", action: onQuit)
     }
     .popoverSection(vertical: 7)
+    .popoverCard()
   }
 }
 

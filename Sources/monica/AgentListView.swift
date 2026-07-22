@@ -72,18 +72,24 @@ struct StatusIndicator: View {
   }
 }
 
-/// Tiny capsule naming which agent runs in the pane ("claude"/"pi"),
-/// tinted per agent so the two kinds are tellable apart without reading.
+/// Tiny tag naming which agent runs in the pane ("claude"/"pi"), tinted per
+/// agent so the two kinds are tellable apart without reading. Monospaced and
+/// squared-off (rather than a capsule) so it reads as a technical identifier
+/// tag rather than a soft pill — matches the tmux/CLI-adjacent nature of
+/// what it's labeling.
 struct AgentBadge: View {
   let agentName: String
 
   var body: some View {
     Text(agentName)
-      .font(.system(size: 9, weight: .medium))
+      .font(.system(size: 9, weight: .medium, design: .monospaced))
       .foregroundStyle(StatusStyle.agentTint(agentName))
       .padding(.horizontal, 5)
       .padding(.vertical, 1)
-      .background(Capsule().fill(StatusStyle.agentTint(agentName).opacity(0.14)))
+      .background(
+        RoundedRectangle(cornerRadius: 4)
+          .fill(StatusStyle.agentTint(agentName).opacity(0.14))
+      )
   }
 }
 
@@ -112,7 +118,7 @@ struct AgentRowView: View {
       Spacer(minLength: 8)
       AgentBadge(agentName: session.agentName)
       Text(session.lastUpdatedDisplay)
-        .font(.system(size: 10))
+        .font(.system(size: 10, design: .monospaced))
         .foregroundStyle(.tertiary)
         .lineLimit(1)
         .frame(width: 44, alignment: .trailing)
@@ -123,13 +129,17 @@ struct AgentRowView: View {
     // like a native menu highlight — see `PopoverLayout`'s doc comment
     // for why this must route through the shared constants.
     .padding(.horizontal, PopoverLayout.rowInnerInset)
-    .padding(.vertical, 5)
+    .padding(.vertical, 6)
     .background(
-      RoundedRectangle(cornerRadius: 7)
+      RoundedRectangle(cornerRadius: PopoverLayout.innerCornerRadius)
         .fill(
           isSelected
             ? Color.accentColor.opacity(0.2)
             : (isHovering ? Color.secondary.opacity(0.08) : Color.clear)
+        )
+        .overlay(
+          RoundedRectangle(cornerRadius: PopoverLayout.innerCornerRadius)
+            .stroke(isSelected ? Color.accentColor.opacity(0.4) : Color.clear, lineWidth: 1)
         )
     )
     .padding(.horizontal, PopoverLayout.rowOuterInset)

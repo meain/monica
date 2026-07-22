@@ -45,6 +45,13 @@ final class MenuBarController {
       self?.closePopover(restorePreviousApp: true)
     }
     model.onCancel = { [weak self] in self?.closePopover(restorePreviousApp: true) }
+    // Re-run the resize whenever the row count actually shown changes
+    // after the initial open (typing into the filter, or a background
+    // rescan changing session count) — without this, the list card kept
+    // whatever height it had when the popover first opened, leaving a
+    // visibly empty card underneath a narrowed-down filtered list instead
+    // of shrinking to fit.
+    model.onFilteredCountChange = { [weak self] in self?.resizeIfShown() }
 
     if let button = statusItem.button {
       button.action = #selector(handleClick(_:))
@@ -152,6 +159,15 @@ final class MenuBarController {
     }
   }
 
+  /// `resizeForScreen()`, but skipped while the popover isn't on screen —
+  /// `model.onFilteredCountChange` can fire from a background rescan
+  /// (`updateTitle()`'s `model.refreshData`) even when nothing is showing,
+  /// and there's no `NSPopover` geometry worth touching in that case.
+  private func resizeIfShown() {
+    guard popover.isShown else { return }
+    resizeForScreen()
+  }
+
   /// Sizes the list to how many agents are actually showing, not always to
   /// the maximum — only clamped by 60% of the active screen's height for
   /// when there are a lot of them. `fixedChrome` is a rough estimate of
@@ -160,7 +176,15 @@ final class MenuBarController {
   /// just a hint (see AGENTS.md), so this doesn't need to be exact.
   private func resizeForScreen() {
     let screenHeight = NSScreen.main?.visibleFrame.height ?? 800
-    let fixedChrome: CGFloat = 220
+    // Bumped from 220 after the card-based redesign added real height
+    // (outer margin + gaps between cards, replacing near-zero-height
+    // dividers) — measured empirically: the popover was landing ~64pt
+    // taller than this hint accounted for, which pushed NSPopover to
+    // reposition the window upward far enough to clip behind the menu
+    // bar (confirmed via `CGWindowListCopyWindowInfo` showing a negative
+    // window Y). Keep this in sync with `PopoverLayout.outerPadding`/
+    // `cardSpacing` if those change again.
+    let fixedChrome: CGFloat = 284
     let maxListHeight = max(agentRowHeight, screenHeight * 0.6 - fixedChrome)
     let rowCount = model.filteredSessions.count
     let desiredListHeight =

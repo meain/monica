@@ -13,7 +13,10 @@ import Foundation
 @MainActor
 final class AgentPickerModel: ObservableObject {
   @Published var sessions: [AgentSession] = [] {
-    didSet { updatePreview() }
+    didSet {
+      updatePreview()
+      notifyIfVisibleCountChanged()
+    }
   }
   @Published var selection = 0 {
     didSet { updatePreview() }
@@ -54,6 +57,30 @@ final class AgentPickerModel: ObservableObject {
   /// from the active screen's height each time the popover opens (capped
   /// at 60% of it) rather than a small fixed value.
   @Published var listHeight: CGFloat = 150
+
+  /// Fired only when `filteredSessions.count` actually changes — new
+  /// session data from a scan, or `filterText` narrowing/widening the list
+  /// — so `MenuBarController` can re-run its popover resize. This model
+  /// has no access to `NSPopover` itself (that's an AppKit/window
+  /// concern), so it only notifies; it doesn't resize anything directly.
+  var onFilteredCountChange: (() -> Void)?
+
+  /// Last count `onFilteredCountChange` fired for — without this gate, the
+  /// callback fired on every `sessions` assignment, including the
+  /// once-a-second background rescan (`MenuBarController.updateTitle`'s
+  /// `refreshData`) even when the visible row count hadn't actually
+  /// changed. That drove a real `NSPopover.contentSize` resize every
+  /// second the popover sat open, which — being an animated resize —
+  /// could be screenshotted mid-transition, showing a stray gap between
+  /// cards that wasn't a real layout bug.
+  private var lastNotifiedCount: Int?
+
+  private func notifyIfVisibleCountChanged() {
+    let count = filteredSessions.count
+    guard count != lastNotifiedCount else { return }
+    lastNotifiedCount = count
+    onFilteredCountChange?()
+  }
 
   /// Bumped whenever the text field should (re-)claim keyboard focus.
   /// `@FocusState` set from `.onAppear` alone is a race against the
@@ -183,11 +210,8 @@ final class AgentPickerModel: ObservableObject {
 
   private func filterChanged() {
     let count = filteredSessions.count
-    guard count > 0 else {
-      selection = 0
-      return
-    }
-    selection = min(selection, count - 1)
+    selection = count > 0 ? min(selection, count - 1) : 0
+    notifyIfVisibleCountChanged()
   }
 
   private func updatePreview() {
