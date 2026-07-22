@@ -24,31 +24,62 @@ import SwiftUI
 /// reaches the real `NSScrollView`. Directly setting `hasVerticalScroller`/
 /// `hasHorizontalScroller` to `false` on that instance is authoritative —
 /// it's the actual AppKit state SwiftUI's modifier doesn't fully control.
+///
+/// Reapplying only from `makeNSView`/`updateNSView` (i.e. SwiftUI's own
+/// update cycle), or even from `layout()`, is not enough: a real mouse
+/// hovering over or scrolling the view makes AppKit reveal the classic
+/// scroller *internally* without necessarily invalidating this subview's own
+/// layout — confirmed by the fact that a programmatic/offscreen render
+/// (`MONICA_SHOT`, no real HID input) never reproduces the stuck scrollbar,
+/// but a real mouse-driven session on this machine does every time
+/// (`AppleShowScrollBars: Automatic` reveals a classic, space-reserving
+/// scroller once a physical mouse hovers/scrolls, and that reveal isn't
+/// tied to any SwiftUI state change or guaranteed layout pass on this
+/// particular subview). `SuppressorView` instead polls on a short repeating
+/// timer while it's in a window and re-asserts the override every tick —
+/// brute-force, but the one thing that reliably wins the race against
+/// AppKit's internal reveal regardless of what triggers it.
 struct ScrollbarSuppressor: NSViewRepresentable {
   func makeNSView(context: Context) -> NSView {
-    let view = NSView(frame: .zero)
-    DispatchQueue.main.async { configure(from: view) }
-    return view
+    SuppressorView(frame: .zero)
   }
 
-  func updateNSView(_ nsView: NSView, context: Context) {
-    DispatchQueue.main.async { configure(from: nsView) }
-  }
+  func updateNSView(_ nsView: NSView, context: Context) {}
 
-  private func configure(from view: NSView) {
-    guard let scrollView = enclosingScrollView(of: view) else { return }
-    scrollView.hasVerticalScroller = false
-    scrollView.hasHorizontalScroller = false
-    scrollView.scrollerStyle = .overlay
-    scrollView.autohidesScrollers = true
-  }
+  private final class SuppressorView: NSView {
+    private var timer: Timer?
 
-  private func enclosingScrollView(of view: NSView) -> NSScrollView? {
-    var current = view.superview
-    while let candidate = current {
-      if let scrollView = candidate as? NSScrollView { return scrollView }
-      current = candidate.superview
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      timer?.invalidate()
+      timer = nil
+      guard window != nil else { return }
+      configure(from: self)
+      timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        guard let self else { return }
+        configure(from: self)
+      }
     }
-    return nil
+
+    deinit {
+      timer?.invalidate()
+    }
   }
+}
+
+private func configure(from view: NSView) {
+  guard let scrollView = enclosingScrollView(of: view) else { return }
+  scrollView.hasVerticalScroller = false
+  scrollView.hasHorizontalScroller = false
+  scrollView.scrollerStyle = .overlay
+  scrollView.autohidesScrollers = true
+}
+
+private func enclosingScrollView(of view: NSView) -> NSScrollView? {
+  var current = view.superview
+  while let candidate = current {
+    if let scrollView = candidate as? NSScrollView { return scrollView }
+    current = candidate.superview
+  }
+  return nil
 }
