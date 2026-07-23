@@ -47,12 +47,16 @@ struct AgentSession: Identifiable, Equatable {
   /// menu action), read from `SessionNameStore` on each scan. Purely a
   /// display/filter alias — sorting and identity still use `project`/`paneId`.
   var customName: String?
+  /// The agent's own session name, when it has a meaningful one — currently
+  /// only Claude Code, read from `~/.claude/sessions/<pid>.json` on each scan
+  /// (see `AgentScanner.lookupClaudeSessionName`). Always nil for pi.
+  var agentSessionName: String?
 
   var id: String { paneId }
 
-  /// What the row's bold title shows: the custom name when one is set,
-  /// otherwise the project.
-  var displayName: String { customName ?? project }
+  /// What the row's bold title shows, in priority order: the name set in
+  /// monica, then the agent's own session name, then the project.
+  var displayName: String { customName ?? agentSessionName ?? project }
 
   var displayTitle: String { "\(session)/\(project)" }
   var displaySubtitle: String { "\(windowName) · \(agentName)" }

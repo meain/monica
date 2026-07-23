@@ -110,7 +110,9 @@ final class AgentPickerModel: ObservableObject {
     return sessions.filter {
       $0.displayTitle.localizedCaseInsensitiveContains(filterText)
         || $0.displaySubtitle.localizedCaseInsensitiveContains(filterText)
-        || ($0.customName?.localizedCaseInsensitiveContains(filterText) ?? false)
+        // Covers both the monica-set custom name and the agent's own
+        // session name (whichever the row is actually titled with).
+        || $0.displayName.localizedCaseInsensitiveContains(filterText)
         // Lets typing "waiting"/"working"/"idle"/"stale"/"quiet" filter by
         // status, matching the same word shown in the row's status legend.
         || StatusStyle.word(for: $0.status, isStale: $0.isStale, isQuiet: $0.isQuiet)

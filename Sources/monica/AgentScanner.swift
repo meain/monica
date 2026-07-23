@@ -39,6 +39,8 @@ final class AgentScanner: ObservableObject {
   private var timer: Timer?
   private let statusDir = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent(".local/share/aistatus")
+  private let claudeSessionsDir = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".claude/sessions")
 
   func start(interval: TimeInterval = 2.0) {
     scan()
@@ -87,7 +89,8 @@ final class AgentScanner: ObservableObject {
           project: project,
           lastUpdated: lastUpdated,
           sessionId: sessionId,
-          customName: SessionNameStore.name(for: agent.pid)
+          customName: SessionNameStore.name(for: agent.pid),
+          agentSessionName: agent.name == "claude" ? lookupClaudeSessionName(pid: agent.pid) : nil
         )
       )
     }
@@ -236,5 +239,30 @@ final class AgentScanner: ObservableObject {
     let status = AgentStatus(rawValue: parsed.status ?? "idle") ?? .idle
     let project = parsed.project ?? (fallbackPath as NSString).lastPathComponent
     return (status, project, Date(timeIntervalSince1970: ts), parsed.sessionId)
+  }
+
+  // MARK: - Claude session name lookup
+
+  /// Claude Code maintains `~/.claude/sessions/<pid>.json` per live process
+  /// (pruned when the process exits — confirmed against real files on this
+  /// machine: only the currently-running pids exist). `name` is the session's
+  /// title, but `nameSource: "derived"` marks an auto-generated placeholder
+  /// (just the cwd's last component plus a hash suffix, e.g. "monica-dd") —
+  /// those are skipped, since showing one would be strictly noisier than the
+  /// plain project name it's derived from. Explicitly named sessions carry no
+  /// `nameSource` field.
+  private struct ClaudeSessionFile: Decodable {
+    var name: String?
+    var nameSource: String?
+  }
+
+  private func lookupClaudeSessionName(pid: Int32) -> String? {
+    let file = claudeSessionsDir.appendingPathComponent("\(pid).json")
+    guard let data = try? Data(contentsOf: file),
+      let parsed = try? JSONDecoder().decode(ClaudeSessionFile.self, from: data),
+      parsed.nameSource != "derived",
+      let name = parsed.name, !name.isEmpty
+    else { return nil }
+    return name
   }
 }
