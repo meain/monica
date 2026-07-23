@@ -43,8 +43,16 @@ struct AgentSession: Identifiable, Equatable {
   /// transcript for the message preview. `nil` if the status file was
   /// missing/stale (see `AgentScanner.lookupStatus`).
   var sessionId: String?
+  /// User-assigned name for this session (⌘R / the row's "Rename…" context
+  /// menu action), read from `SessionNameStore` on each scan. Purely a
+  /// display/filter alias — sorting and identity still use `project`/`paneId`.
+  var customName: String?
 
   var id: String { paneId }
+
+  /// What the row's bold title shows: the custom name when one is set,
+  /// otherwise the project.
+  var displayName: String { customName ?? project }
 
   var displayTitle: String { "\(session)/\(project)" }
   var displaySubtitle: String { "\(windowName) · \(agentName)" }

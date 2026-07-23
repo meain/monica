@@ -35,6 +35,13 @@ final class AgentPickerModel: ObservableObject {
   @Published var composeTarget: AgentSession?
   @Published var composeText: String = ""
 
+  /// Rename mode (⌘R on the focused row, or the row context menu's
+  /// "Rename…") — same field-swap pattern as `composeTarget`: while set, the
+  /// search field is replaced by a name field; plain Return saves and Escape
+  /// cancels back to search. Mutually exclusive with compose mode.
+  @Published var renameTarget: AgentSession?
+  @Published var renameText: String = ""
+
   /// Toggled by the footer's "?" button — swaps the "LAST MESSAGE" preview
   /// panel for a compact in-popover shortcuts reference (`MenuBarPopoverView`'s
   /// `ShortcutsHelpSection`), so the keyboard shortcuts are reachable without
@@ -103,6 +110,7 @@ final class AgentPickerModel: ObservableObject {
     return sessions.filter {
       $0.displayTitle.localizedCaseInsensitiveContains(filterText)
         || $0.displaySubtitle.localizedCaseInsensitiveContains(filterText)
+        || ($0.customName?.localizedCaseInsensitiveContains(filterText) ?? false)
         // Lets typing "waiting"/"working"/"idle"/"stale"/"quiet" filter by
         // status, matching the same word shown in the row's status legend.
         || StatusStyle.word(for: $0.status, isStale: $0.isStale, isQuiet: $0.isQuiet)
@@ -128,6 +136,8 @@ final class AgentPickerModel: ObservableObject {
     filterText = ""
     composeTarget = nil
     composeText = ""
+    renameTarget = nil
+    renameText = ""
     showingHelp = false
     installMonitor()
   }
@@ -198,6 +208,13 @@ final class AgentPickerModel: ObservableObject {
     beginCompose()
   }
 
+  /// Enters rename mode for a specific row — used by the row context menu's
+  /// "Rename…" action, same targeting caveat as `composeMessage(for:)`.
+  func rename(_ session: AgentSession) {
+    select(session)
+    beginRename()
+  }
+
   /// Copies the selected row's "Last message" preview text — bound to
   /// ⌘⇧C (see `installMonitor`) and to a header button in
   /// `LastMessageSection`, so it's reachable by keyboard or mouse.
@@ -250,6 +267,39 @@ final class AgentPickerModel: ObservableObject {
     requestFocusNextTick()
   }
 
+  private func beginRename() {
+    let list = filteredSessions
+    guard list.indices.contains(selection) else { return }
+    let target = list[selection]
+    renameTarget = target
+    // Pre-fill with the current custom name so a rename is an edit, not a
+    // retype — and so clearing the field is how a name is removed.
+    renameText = target.customName ?? ""
+    requestFocusNextTick()
+  }
+
+  private func cancelRename() {
+    renameTarget = nil
+    renameText = ""
+    requestFocusNextTick()
+  }
+
+  /// Persists to `SessionNameStore` (an empty field clears the name) and
+  /// patches the in-memory rows immediately — the next scan re-reads the
+  /// store anyway, this just avoids a visible one-tick lag in the list.
+  private func commitRename() {
+    guard let target = renameTarget else { return }
+    let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+    SessionNameStore.setName(trimmed, for: target.agentPid)
+    sessions = sessions.map { session in
+      guard session.agentPid == target.agentPid else { return session }
+      var updated = session
+      updated.customName = trimmed.isEmpty ? nil : trimmed
+      return updated
+    }
+    cancelRename()
+  }
+
   private func sendComposedMessage() {
     guard let target = composeTarget else { return }
     let text = composeText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -267,6 +317,8 @@ final class AgentPickerModel: ObservableObject {
       guard let self else { return event }
       switch event.keyCode {
       case 126:  // up
+        // Rename mode: let the field editor keep normal cursor movement.
+        if self.renameTarget != nil { return event }
         if self.composeTarget != nil {
           // Recall the last sent message into an empty field, mirroring
           // shell history — but only when the field is empty, so this
@@ -281,10 +333,14 @@ final class AgentPickerModel: ObservableObject {
         self.move(-1)
         return nil
       case 125:  // down
-        guard self.composeTarget == nil else { return event }
+        guard self.composeTarget == nil, self.renameTarget == nil else { return event }
         self.move(1)
         return nil
       case 36, 76:  // return / enter
+        if self.renameTarget != nil {
+          self.commitRename()
+          return nil
+        }
         if self.composeTarget != nil {
           // Shift+Return: insert a newline ourselves rather than letting the
           // raw event through. `TextField(axis: .vertical)` isn't backed by
@@ -312,7 +368,9 @@ final class AgentPickerModel: ObservableObject {
         }
         return nil
       case 53:  // escape
-        if self.composeTarget != nil {
+        if self.renameTarget != nil {
+          self.cancelRename()
+        } else if self.composeTarget != nil {
           self.cancelCompose()
         } else if self.showingHelp {
           self.showingHelp = false
@@ -320,6 +378,17 @@ final class AgentPickerModel: ObservableObject {
           self.cancel()
         }
         return nil
+      case 15:  // R
+        // ⌘R renames the focused row — only outside compose/rename mode,
+        // so it can't fire mid-typing (plain "r" in the search field passes
+        // through as normal text either way).
+        if self.composeTarget == nil, self.renameTarget == nil,
+          event.modifierFlags.contains(.command)
+        {
+          self.beginRename()
+          return nil
+        }
+        return event
       case 8:  // C
         // ⌘⇧C copies the preview text — only outside compose mode, so it
         // doesn't fight a real ⌘⇧C keyboard shortcut some other context

@@ -108,7 +108,7 @@ struct AgentRowView: View {
   var body: some View {
     HStack(alignment: .center, spacing: 8) {
       StatusIndicator(status: session.status, isStale: session.isStale, isQuiet: session.isQuiet)
-      Text(session.project)
+      Text(session.displayName)
         .font(.system(size: 13, weight: .semibold))
         .lineLimit(1)
       Text("\(session.session) · \(session.windowName)")
@@ -146,7 +146,10 @@ struct AgentRowView: View {
     .contentShape(Rectangle())
     // Row text truncates (`lineLimit(1)` on project/session/window above);
     // the tooltip carries the untruncated names plus the working directory
-    // so a long project name is never fully hidden.
+    // so a long project name is never fully hidden. When a custom name is
+    // set it replaces the project in the row, so the tooltip (which keeps
+    // `displayTitle`'s real project) is also where the underlying project
+    // stays discoverable.
     .help("\(session.displayTitle) — \(session.displaySubtitle)\n\(session.panePath)")
     .onHover { hovering in
       isHovering = hovering
@@ -178,6 +181,9 @@ struct AgentListView: View {
   var onCommit: (AgentSession) -> Void = { _ in }
   /// Context menu "Send Message…" — enters compose mode for this row.
   var onSendMessage: (AgentSession) -> Void = { _ in }
+  /// Context menu "Rename…" — enters rename mode for this row (⌘R does the
+  /// same for the selected row).
+  var onRename: (AgentSession) -> Void = { _ in }
   /// Context menu "Kill Pane…" — the caller owns the confirmation step.
   var onRequestKill: (AgentSession) -> Void = { _ in }
 
@@ -210,6 +216,7 @@ struct AgentListView: View {
           .contextMenu {
             Button("Switch to Pane") { onCommit(session) }
             Button("Send Message…") { onSendMessage(session) }
+            Button("Rename…") { onRename(session) }
             Divider()
             Button("Copy Path") { copyToPasteboard(session.panePath) }
             Button("Reveal in Finder") {

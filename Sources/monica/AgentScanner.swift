@@ -86,7 +86,8 @@ final class AgentScanner: ObservableObject {
           status: status,
           project: project,
           lastUpdated: lastUpdated,
-          sessionId: sessionId
+          sessionId: sessionId,
+          customName: SessionNameStore.name(for: agent.pid)
         )
       )
     }

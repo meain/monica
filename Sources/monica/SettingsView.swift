@@ -176,6 +176,7 @@ struct SettingsView: View {
         ShortcutRow(title: "Filter and move", keys: ["type", "↑", "↓"])
         ShortcutRow(title: "Switch to the selected agent", keys: ["↩"])
         ShortcutRow(title: "Send a message without switching", keys: ["⌘↩"])
+        ShortcutRow(title: "Rename the selected agent", keys: ["⌘R"])
         ShortcutRow(title: "Copy last message", keys: ["⌘⇧C"])
       } header: {
         Text("Shortcuts")

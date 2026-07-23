@@ -16,6 +16,8 @@ struct MenuBarPopoverView: View {
     VStack(alignment: .leading, spacing: PopoverLayout.cardSpacing) {
       if model.composeTarget != nil {
         ComposeFieldSection(model: model, isFocused: $searchFocused)
+      } else if model.renameTarget != nil {
+        RenameFieldSection(model: model, isFocused: $searchFocused)
       } else {
         SearchFieldSection(model: model, isFocused: $searchFocused)
       }
@@ -77,7 +79,7 @@ private struct ComposeFieldSection: View {
           .font(.system(size: 10))
           .foregroundStyle(Color.accentColor)
         if let target = model.composeTarget {
-          Text("Send to \(target.project)")
+          Text("Send to \(target.displayName)")
             .font(.system(size: 11, weight: .medium))
             .lineLimit(1)
         }
@@ -105,6 +107,42 @@ private struct ComposeFieldSection: View {
   }
 }
 
+/// Same field-swap pattern as `ComposeFieldSection`, for rename mode (⌘R or
+/// the row context menu's "Rename…"): the search field becomes a name field,
+/// Return saves, Escape cancels (both handled by `AgentPickerModel`'s keydown
+/// monitor). Submitting an empty field clears the custom name.
+private struct RenameFieldSection: View {
+  @ObservedObject var model: AgentPickerModel
+  var isFocused: FocusState<Bool>.Binding
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(spacing: 6) {
+        Image(systemName: "pencil")
+          .font(.system(size: 10))
+          .foregroundStyle(Color.accentColor)
+        if let target = model.renameTarget {
+          Text("Rename \(target.displayName)")
+            .font(.system(size: 11, weight: .medium))
+            .lineLimit(1)
+        }
+        Spacer(minLength: 8)
+        Text("↩ save · esc cancel")
+          .font(.system(size: 10))
+          .foregroundStyle(.tertiary)
+      }
+      TextField("Custom name (empty to clear)…", text: $model.renameText)
+        .textFieldStyle(.plain)
+        .font(.system(size: 14))
+        .focused(isFocused)
+    }
+    .popoverSection(vertical: 8)
+    // Accent-tinted like compose mode, so any field-swap state is visually
+    // distinct from plain search.
+    .popoverCard(tint: .accentColor)
+  }
+}
+
 private struct AgentListSection: View {
   @ObservedObject var model: AgentPickerModel
 
@@ -118,6 +156,7 @@ private struct AgentListSection: View {
           onSelect: model.select,
           onCommit: model.choose,
           onSendMessage: model.composeMessage,
+          onRename: model.rename,
           onRequestKill: { model.pendingKillSession = $0 }
         )
         // See `ScrollbarSuppressor`'s doc comment: `.scrollIndicators
@@ -206,7 +245,7 @@ private struct LastMessageSection: View {
           .foregroundStyle(.secondary)
         Spacer(minLength: 8)
         if let selected = model.selectedSession {
-          Text(selected.project)
+          Text(selected.displayName)
             .font(.system(size: 10))
             .foregroundStyle(.tertiary)
             .lineLimit(1)
@@ -368,6 +407,7 @@ private struct ShortcutsHelpSection: View {
           ShortcutRow(title: "Filter and move", keys: ["type", "↑", "↓"])
           ShortcutRow(title: "Switch to selected agent", keys: ["↩"])
           ShortcutRow(title: "Send a message without switching", keys: ["⌘↩"])
+          ShortcutRow(title: "Rename the selected agent", keys: ["⌘R"])
           ShortcutRow(title: "Copy last message", keys: ["⌘⇧C"])
         }
         .padding(8)
