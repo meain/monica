@@ -76,13 +76,14 @@ struct AgentSession: Identifiable, Equatable {
   private static let staleThreshold: TimeInterval = 3 * 3600
   private static let quietThreshold: TimeInterval = 15 * 60
 
-  /// True once a *known* last-update timestamp is more than 3h old — not
-  /// when it's `nil` (no status file yet is "unknown", not "stale").
-  /// Doesn't change `status` itself, just how it's drawn (see
-  /// `displayGlyph`) — the underlying pid is still confirmed live by the
-  /// pid-tree scan either way.
+  /// True once a last-update timestamp is more than 3h old, *or* there's no
+  /// aistatus file for this pid at all (`lastUpdated == nil`) — no file
+  /// means we have no real signal for this session, which is just as
+  /// untrustworthy as a stale one. Doesn't change `status` itself, just how
+  /// it's drawn (see `displayGlyph`) — the underlying pid is still confirmed
+  /// live by the pid-tree scan either way.
   var isStale: Bool {
-    guard let lastUpdated else { return false }
+    guard let lastUpdated else { return true }
     return Date().timeIntervalSince(lastUpdated) > AgentSession.staleThreshold
   }
 
