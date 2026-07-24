@@ -18,6 +18,7 @@ enum SortMode: String, CaseIterable, Identifiable {
   case alphabeticalProject
   case groupedBySession
   case groupedByAgentType
+  case tmux
   case needsAttention
   case yourActivity
 
@@ -31,6 +32,7 @@ enum SortMode: String, CaseIterable, Identifiable {
     case .alphabeticalProject: return "Project (A–Z)"
     case .groupedBySession: return "Session"
     case .groupedByAgentType: return "Agent type"
+    case .tmux: return "Tmux order"
     case .needsAttention: return "Needs attention"
     case .yourActivity: return "Recently switched to"
     }
@@ -54,6 +56,10 @@ enum SortMode: String, CaseIterable, Identifiable {
       return "Grouped by tmux session, then window."
     case .groupedByAgentType:
       return "Grouped by agent (claude, then pi)."
+    case .tmux:
+      return
+        "Your current tmux session first, in window/pane order, then other sessions in the "
+        + "order you last attached to them."
     case .needsAttention:
       return
         "Longest-waiting agent first (most overdue for a response), then the most recently "

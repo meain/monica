@@ -62,6 +62,11 @@ final class AgentScanner: ObservableObject {
       return
     }
 
+    // `uniquingKeysWith:` (not `uniqueKeysWithValues:`) since a window linked
+    // into multiple sessions (session groups) makes the same pane_id appear
+    // more than once in `list-panes -a` — see the loop below.
+    let paneInfoByPaneId = Dictionary(
+      panes.map { ($0.paneId, $0) }, uniquingKeysWith: { first, _ in first })
     let tree = buildProcessTree()
     var seenPaneIds = Set<String>()
     var result: [AgentSession] = []
@@ -129,6 +134,28 @@ final class AgentScanner: ObservableObject {
         if order != .orderedSame { return order == .orderedAscending }
         return newerFirst($0, $1)
       }
+    case .tmux:
+      let current = currentTmuxSession()
+      result.sort {
+        guard let p0 = paneInfoByPaneId[$0.paneId], let p1 = paneInfoByPaneId[$1.paneId] else {
+          return newerFirst($0, $1)
+        }
+        let isCurrent0 = p0.session == current
+        let isCurrent1 = p1.session == current
+        if isCurrent0 != isCurrent1 { return isCurrent0 }
+        if p0.session != p1.session {
+          // Different sessions (neither is "current", or this is a tiebreak
+          // that can't happen since only one session can equal `current`):
+          // most-recently-attached session first.
+          if p0.sessionLastAttached != p1.sessionLastAttached {
+            return p0.sessionLastAttached > p1.sessionLastAttached
+          }
+          return p0.session.localizedCaseInsensitiveCompare(p1.session) == .orderedAscending
+        }
+        // Same session: tmux's own window/pane order.
+        if p0.windowIndex != p1.windowIndex { return p0.windowIndex < p1.windowIndex }
+        return p0.paneIndex < p1.paneIndex
+      }
     case .needsAttention:
       result.sort {
         if $0.needsAttentionRank != $1.needsAttentionRank {
@@ -159,22 +186,42 @@ final class AgentScanner: ObservableObject {
     var windowName: String
     var panePath: String
     var panePid: Int32
+    /// tmux's own window/pane ordering — used by the `.tmux` `SortMode` to
+    /// sort panes within a session the same way tmux itself lays them out.
+    var windowIndex: Int
+    var paneIndex: Int
+    /// Unix timestamp of `#{session_last_attached}` — the `.tmux` `SortMode`'s
+    /// proxy for "order of access" among sessions other than the current one.
+    var sessionLastAttached: Double
   }
 
   private func listPanes() -> [RawPane] {
     let format =
-      "#{pane_id}\t#{window_id}\t#{?session_group,#{session_group},#{session_name}}\t#{window_name}\t#{pane_current_path}\t#{pane_pid}"
+      "#{pane_id}\t#{window_id}\t#{?session_group,#{session_group},#{session_name}}\t#{window_name}\t#{pane_current_path}\t#{pane_pid}\t#{window_index}\t#{pane_index}\t#{session_last_attached}"
     let output = TmuxCLI.run(["list-panes", "-a", "-F", format])
     guard !output.isEmpty else { return [] }
 
     return output.split(separator: "\n").compactMap { line -> RawPane? in
       let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
-      guard fields.count == 6, let pid = Int32(fields[5]) else { return nil }
+      guard fields.count == 9, let pid = Int32(fields[5]),
+        let windowIndex = Int(fields[6]), let paneIndex = Int(fields[7]),
+        let sessionLastAttached = Double(fields[8])
+      else { return nil }
       return RawPane(
         paneId: fields[0], windowId: fields[1], session: fields[2],
-        windowName: fields[3], panePath: fields[4], panePid: pid
+        windowName: fields[3], panePath: fields[4], panePid: pid,
+        windowIndex: windowIndex, paneIndex: paneIndex,
+        sessionLastAttached: sessionLastAttached
       )
     }
+  }
+
+  /// The tmux session the (single, per DESIGN.md's assumption) attached
+  /// client is currently on — the `.tmux` `SortMode`'s notion of "current
+  /// session". Same single-client assumption as `Switcher.firstAttachedClient`.
+  private func currentTmuxSession() -> String? {
+    let output = TmuxCLI.run(["list-clients", "-F", "#{client_session}"])
+    return output.split(separator: "\n").first.map(String.init)
   }
 
   // MARK: - pid tree (BFS for a `claude`/`pi` descendant)
