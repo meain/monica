@@ -146,6 +146,15 @@ gh issue comment "$MEDIA_ISSUE" --repo meain/monica --body "### README popover s
 
 $EMBED" >/dev/null
 
-sed -i '' -E "s#!\[Monica popover\]\([^)]+\)#![Monica popover]($URL)#" "$ROOT/README.md"
+# macOS ships BSD sed (`-i ''`), but this machine's `sed` resolves to the nix
+# gnused package instead (GNU sed, `-i` takes no separate suffix arg) —
+# `sed -i '' -E ...` under GNU sed misparses `''` as the script itself and the
+# real script as a file to read, failing with "No such file or directory".
+# Detect which flavor is on PATH rather than hardcoding one syntax.
+if sed --version >/dev/null 2>&1; then
+  sed -i -E "s#!\[Monica popover\]\([^)]+\)#![Monica popover]($URL)#" "$ROOT/README.md"
+else
+  sed -i '' -E "s#!\[Monica popover\]\([^)]+\)#![Monica popover]($URL)#" "$ROOT/README.md"
+fi
 
 echo "$URL"
