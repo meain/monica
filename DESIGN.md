@@ -36,6 +36,20 @@ follow-up fix (see "Settings window sizing"). The scrollbar-shift issue's first 
 (`.scrollIndicators(.hidden)`) turned out to be incomplete — see "Scrollbars:
 `.scrollIndicators(.hidden)` isn't enough".
 
+**v1.4 note:** the status source and status model both changed. **Claude Code agents
+now read their status from Claude Code's own live process registry,
+`~/.claude/sessions/<pid>.json`** (`status: busy`/`idle`, `cwd`, `sessionId`, `name`,
+`updatedAt`), not from the hook-driven aistatus file — the registry is written by the
+CLI itself rather than by a hook that has to fire, so it's fresher and more reliable
+(and monica was already reading that file for the session name, so it's one read
+instead of two). `pi` has no such registry and still reads aistatus. In tandem, the
+**`waiting` status was removed entirely** — the registry only distinguishes `busy`/`idle`,
+so a separate "blocked on you" state can't be told apart reliably. There are now two
+live states, `working` (registry `busy`) and `idle` (everything else — finished its turn,
+awaiting you); pi's old aistatus `waiting` collapses into `idle`. The 15m "quiet" and 3h
+"stale" time-based overlays are unchanged. The jump hotkey and "Needs attention" sort,
+both previously built around `waiting`, now target `idle` (the agent awaiting you).
+
 ## Problem
 
 `,tmux-ai-agents` already does this well inside tmux (`M-'` → fzf popup → pick an agent
@@ -50,9 +64,11 @@ frontmost, or live in the menu bar. That's the gap monica fills.
   has no dependency on dotfiles being present at a given path.
 - `~/.dotfiles/claude/.claude/hooks/update-status.sh` and the `pi` tmux-status
   extension — write `~/.local/share/aistatus/pid-<pid>.json` with
-  `{session_id, pid, status, hook_event, project, timestamp}`, `status` being
-  `working` / `waiting` / `idle`. monica reads these as-is; it does not reimplement
-  status detection.
+  `{session_id, pid, status, hook_event, project, timestamp}`. This is now the status
+  source for `pi` only; **claude** reads Claude Code's own
+  `~/.claude/sessions/<pid>.json` registry instead (see the v1.4 note and
+  `AgentScanner.lookupStatus`). monica reads both as-is; it does not reimplement status
+  detection.
 - `~/dev/src/beacon` — SwiftPM (no Xcode), borderless `FloatingPanel` Spotlight-style
   popup, `LSUIElement` `.app` bundling via a `build-app.sh` + `Makefile`. monica's
   packaging is templated directly on this, and its `PickerModel` (an AppKit local
@@ -74,7 +90,7 @@ frontmost, or live in the menu bar. That's the gap monica fills.
 
 | question | decision |
 |---|---|
-| status data source | read `~/.local/share/aistatus/*.json` as-is; no new detection logic |
+| status data source | **claude**: Claude Code's `~/.claude/sessions/<pid>.json` registry; **pi**: `~/.local/share/aistatus/*.json`. Read as-is, no new detection logic (v1.4) |
 | pane/pid scanning | reimplement natively in Swift (no shelling out to dotfiles scripts) |
 | relationship to `,tmux-ai-agents` | coexist — monica does not replace the tmux popup |
 | notifications | out of scope for v1 — existing `notify-summary.sh` pipeline stays as-is |
@@ -86,9 +102,9 @@ frontmost, or live in the menu bar. That's the gap monica fills.
 | Settings | a proper `NSWindow` (not a panel), opened from a footer row in the popover; lets you re-record the hotkey and change the target app |
 | target app | configurable in Settings (text field + an "Choose…" `NSOpenPanel`), defaults to Ghostty (`com.mitchellh.ghostty`) |
 | Spotlight hotkey default | native global hotkey (Carbon `RegisterEventHotKey`), default ⌃⌥⇧A, re-recordable live from Settings |
-| agent scope | whatever's in the aistatus files today (Claude Code hook schema); can extend later |
+| agent scope | claude (via the sessions registry) and pi (via aistatus); can extend later |
 | message send | ⌘Return on a row composes a message sent via `tmux send-keys`, mirroring `,tmux-ai-agents`'s `alt-enter` |
-| message preview | reads each agent's own transcript file directly (keyed by `session_id`), not the aistatus file — that has no message content |
+| message preview | reads each agent's own transcript file directly (keyed by `session_id`), not the status file — neither the aistatus nor the sessions file carries message content |
 
 **Why the HUD/Spotlight-window surfaces got dropped:** using v1 for real showed the HUD
 strip's one-glyph-per-agent display could just as well live in the menu bar title
@@ -109,7 +125,8 @@ layout pass; that ambiguous guess corrupted the anchor math. Fixed by setting
 AgentScanner (polls every 2s)
   ├─ tmux list-panes -a  ─┐
   ├─ ps -Ao pid,ppid,comm ┴─▶ pid-tree BFS per pane ──▶ candidate agent pid
-  └─ ~/.local/share/aistatus/pid-<pid>.json  ────────▶ status/project/timestamp
+  └─ claude: ~/.claude/sessions/<pid>.json ──────────▶ status/project/timestamp/name
+     pi:     ~/.local/share/aistatus/pid-<pid>.json ─▶ status/project/timestamp
         │
         ▼
   scanner.sessions
@@ -142,7 +159,7 @@ Carbon immediately, so it takes effect without restarting the app.
 
 ### AgentSession model
 
-Mirrors the TSV `,tmux-agent-scan` already emits, plus the aistatus fields:
+Mirrors the TSV `,tmux-agent-scan` already emits, plus the per-agent status fields:
 
 ```swift
 struct AgentSession: Identifiable {
@@ -153,7 +170,7 @@ struct AgentSession: Identifiable {
     var panePath: String
     var agentPid: Int32
     var agentName: String     // "claude" | "pi"
-    var status: AgentStatus   // .working | .waiting | .idle
+    var status: AgentStatus   // .working | .idle
     var project: String
     var lastUpdated: Date?
 }
@@ -161,20 +178,21 @@ struct AgentSession: Identifiable {
 
 ### Status glyphs
 
-Same as `,tmux-ai-agents`: `▶` working (green), `●` waiting (yellow), `○` idle (gray).
-The menu bar title shows one glyph per agent (e.g. `▶ ● ○` for one working, one
-waiting, one idle) — this is what the old HUD strip showed, now living directly in the
-title instead of a separate window. `AgentStatus`'s `Comparable` conformance
-(`working > waiting > idle`) is used elsewhere (e.g. sort order) but no longer collapses
-the title to a single aggregate glyph.
+`▶` working (green), `○` idle (gray). The menu bar title shows one glyph per agent
+(e.g. `▶ ○ ○` for one working, two idle) — this is what the old HUD strip showed, now
+living directly in the title instead of a separate window. `AgentStatus`'s `Comparable`
+conformance (`working > idle`) is used elsewhere (e.g. sort order) but no longer
+collapses the title to a single aggregate glyph. (The old yellow `●` `waiting` glyph is
+gone — see the v1.4 note.)
 
-One more glyph on top of those three: `◌` (dotted circle) for any agent whose
-`lastUpdated` is more than 3h old, *regardless* of what its stale `status` value says —
-a `waiting`/`working` status from 5 hours ago is more likely a dead/abandoned session
-than a real one still wanting attention. This is a display-layer decision
-(`AgentSession.isStale`/`displayGlyph`) — `AgentScanner` itself no longer discards
-old-but-real timestamps the way `,tmux-ai-agents`' 2h `STALE_SECS` cutoff does, since the
-pid-tree scan already guarantees the pid is still a live process (see
+Two more glyphs on top of those two, both time-based overlays that override whatever the
+`status` value says: `●` (filled gray dot) once `lastUpdated` is 15m–3h old ("quiet"),
+and `◌` (dotted circle) once it's more than 3h old ("stale") — a `working` status from
+5 hours ago is more likely a dead/abandoned session than one still wanting attention.
+This is a display-layer decision
+(`AgentSession.isQuiet`/`isStale`/`displayGlyph`) — `AgentScanner` itself no longer
+discards old-but-real timestamps the way `,tmux-ai-agents`' 2h `STALE_SECS` cutoff does,
+since the pid-tree scan already guarantees the pid is still a live process (see
 `AgentScanner.lookupStatus`'s doc comment).
 
 ### Switching, precisely
@@ -197,17 +215,18 @@ OSC-2 title-token approach — deliberately deferred.
 
 Mirrors `,tmux-ai-agents`'s `alt-enter` binding
 (`tmux send-keys -t {3} "$msg" Enter`), which sends text into a pane without switching
-focus to it — useful for nudging an agent that's `waiting` without leaving what you're
-doing. In the popover: ⌘Return on a selected row swaps the search field for a message
+focus to it — useful for nudging an agent that's `idle` (awaiting you) without leaving
+what you're doing. In the popover: ⌘Return on a selected row swaps the search field for a message
 field (`AgentPickerModel.composeTarget`); plain Return sends via
 `Switcher.sendMessage(_:text:)` (`tmux send-keys -t <paneId> <text> Enter`) and closes
 the popover; Escape cancels back to the search field instead of closing the popover.
 
 ### Message preview (selected row only)
 
-The aistatus files carry no message content (`{session_id, pid, status, hook_event,
-project, timestamp}` only) — the preview instead reads each agent's *own* transcript
-file directly, keyed by that `session_id`:
+Neither status file carries message content (aistatus is `{session_id, pid, status,
+hook_event, project, timestamp}`; the claude sessions registry has status/cwd/name but
+no messages) — the preview instead reads each agent's *own* transcript file directly,
+keyed by that `session_id`:
 
 - **Claude Code**: `~/.claude/projects/<cwd, every non-alphanumeric char → '-'>/<sessionId>.jsonl`.
   Confirmed against real transcripts on this machine and against public docs (the
@@ -309,7 +328,7 @@ monica/
   Sources/monica/
     main.swift               # NSApplication bootstrap, AppDelegate, app menu
     AgentModels.swift          # AgentSession, AgentStatus
-    AgentScanner.swift          # tmux+ps scan, aistatus lookup, polling, AgentStore
+    AgentScanner.swift          # tmux+ps scan, status lookup (claude sessions / pi aistatus), polling, AgentStore
     Switcher.swift               # switch-client / select-pane / open -a
     AppSettings.swift             # UserDefaults-backed settings, shared singleton
     HotKeyManager.swift            # Carbon global hotkey registration

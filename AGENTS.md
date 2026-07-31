@@ -47,14 +47,16 @@ AppKit overlay.
 
 ### Verifying the tmux/pid scanning logic without the GUI
 
-The scanner's core logic (tmux pane listing, pid-tree BFS, aistatus lookup) has no
+The scanner's core logic (tmux pane listing, pid-tree BFS, status lookup) has no
 UI dependency. If you change `AgentScanner.swift`, sanity-check the underlying
-commands directly:
+commands directly. Note the status source is per-agent: **claude** reads Claude
+Code's own `~/.claude/sessions/<pid>.json` registry, **pi** reads aistatus.
 
 ```bash
 tmux list-panes -a -F '#{pane_id}\t#{window_id}\t#{session_name}\t#{pane_pid}'
 ps -Ao pid,ppid,comm
-cat ~/.local/share/aistatus/pid-<pid>.json
+cat ~/.claude/sessions/<pid>.json          # claude status/project/timestamp/name
+cat ~/.local/share/aistatus/pid-<pid>.json # pi status/project/timestamp
 ```
 
 ### Verifying the GUI
@@ -83,7 +85,8 @@ the file comes up empty/missing), renders, writes the PNG, and self-terminates. 
 `Read` the PNG to inspect the actual rendered layout — this is the reliable way to
 verify SwiftUI layout here, not a last resort.
 
-The rendered popover reflects **real, live tmux/aistatus data** from whatever agents
+The rendered popover reflects **real, live tmux + status data** (claude from the
+`~/.claude/sessions` registry, pi from aistatus) from whatever agents
 are actually running on this machine — there's no demo-data seam like booker's
 `BOOKER_BM_FILE`. That's usually fine (it's the same dogfood data the real screenshots
 in `docs/` show), but the *selected* row's "Last message" preview can end up showing
@@ -164,9 +167,10 @@ that fails for SwiftUI content, not input delivery.
   directly in README.md/docs.md — don't add the PNG to `docs/`. See the
   `update-readme-screenshot` skill for the scripted version of this for the popover
   screenshot specifically.
-- **The aistatus files have no message content** (`session_id`, `pid`, `status`,
-  `hook_event`, `project`, `timestamp` — that's it). The "Last message" preview instead
-  reads each agent's own transcript file directly, keyed by `session_id`. The two
+- **Neither status file has message content** — aistatus is `session_id`, `pid`,
+  `status`, `hook_event`, `project`, `timestamp`; the claude sessions registry has
+  status/`cwd`/`sessionId`/`name` but no messages either. The "Last message" preview
+  instead reads each agent's own transcript file directly, keyed by `session_id`. The two
   agents use *different* directory-name encodings for the same `cwd`, both
   reverse-engineered empirically against real directories on this machine and
   cross-checked against public docs — don't assume they match, and don't guess a new
@@ -217,9 +221,11 @@ that fails for SwiftUI content, not input delivery.
   collision before assuming the registration code is broken. The hotkey is
   re-recordable live from Settings (`KeyRecorderView.swift`) — changing it calls back
   into `AppDelegate.registerHotKey()`, which re-registers with Carbon immediately.
-- **Status data is read-only.** monica never writes to `~/.local/share/aistatus/` —
-  those files are produced by Claude Code hooks / the `pi` tmux-status extension in
-  `~/.dotfiles`. If status looks wrong, check the hook scripts there, not this repo.
+- **Status data is read-only.** monica never writes to `~/.claude/sessions/` (Claude
+  Code's own process registry, the source for claude) or `~/.local/share/aistatus/`
+  (the `pi` tmux-status extension in `~/.dotfiles`, the source for pi). If a claude's
+  status looks wrong, it's Claude Code's own registry, not this repo; if a pi's status
+  looks wrong, check the tmux-status extension there.
 - **pi session files come in two different shapes, both real, found side by side on
   this machine**: usually a flat `<timestamp>_<sessionId>.jsonl` file directly in the
   project directory, but sometimes (resumed/branched sessions) a

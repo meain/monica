@@ -8,7 +8,7 @@ Code, `pi`) running inside tmux panes.
 ## What it does
 
 Monica sits in your menu bar as a status item showing one glyph per agent, reflecting
-whether each is idle, working, or waiting on you:
+whether each is working or idle (plus a dimmed glyph once an agent has gone quiet):
 
 ![Menu bar status glyphs](https://github.com/user-attachments/assets/eee6ac36-6bfd-430a-9c57-9aa7018117ed)
 
@@ -24,9 +24,10 @@ Click the icon, or press a global hotkey, to open a popover with:
 
 - macOS 14+
 - tmux, with Claude Code and/or `pi` running in tmux panes
-- The status data comes from Claude Code hooks / the `pi` tmux-status extension;
-  Monica only reads it, it never writes to `~/.local/share/aistatus/`. See
-  [docs.md](docs.md) for how to set these up.
+- Status data is read-only: for Claude Code it comes from Claude Code's own
+  `~/.claude/sessions/` process registry; for `pi` it comes from the `pi` tmux-status
+  extension's `~/.local/share/aistatus/` files. Monica never writes to either. See
+  [docs.md](docs.md) for how to set up `pi`'s status extension.
 
 ## Build & run
 

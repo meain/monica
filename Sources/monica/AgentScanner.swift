@@ -1,10 +1,12 @@
 import Foundation
 
+/// The aistatus file, still the only status source for `pi` (which has no
+/// `~/.claude/sessions` registry). `claude` reads its status from the sessions
+/// file instead — see `ClaudeSessionFile`/`lookupStatus`.
 private struct AIStatusFile: Decodable {
   var sessionId: String?
   var pid: Int?
   var status: String?
-  var hookEvent: String?
   var project: String?
   var timestamp: Double?
 
@@ -12,7 +14,6 @@ private struct AIStatusFile: Decodable {
     case sessionId = "session_id"
     case pid
     case status
-    case hookEvent = "hook_event"
     case project
     case timestamp
   }
@@ -25,7 +26,7 @@ private func newerFirst(_ a: AgentSession, _ b: AgentSession) -> Bool {
 }
 
 /// Least-recently-updated first — the `.stalestFirst` `SortMode`'s
-/// comparator, and `.needsAttention`'s tiebreak within its waiting bucket.
+/// comparator, and `.needsAttention`'s tiebreak within its idle bucket.
 private func olderFirst(_ a: AgentSession, _ b: AgentSession) -> Bool {
   (a.lastUpdated ?? .distantPast) < (b.lastUpdated ?? .distantPast)
 }
@@ -79,8 +80,8 @@ final class AgentScanner: ObservableObject {
 
       guard let agent = tree.findAgent(fromRoot: pane.panePid) else { continue }
 
-      let (status, project, lastUpdated, sessionId) = lookupStatus(
-        pid: agent.pid, fallbackPath: pane.panePath)
+      let (status, project, lastUpdated, sessionId, agentSessionName) = lookupStatus(
+        pid: agent.pid, agentName: agent.name, fallbackPath: pane.panePath)
       result.append(
         AgentSession(
           paneId: pane.paneId,
@@ -95,7 +96,7 @@ final class AgentScanner: ObservableObject {
           lastUpdated: lastUpdated,
           sessionId: sessionId,
           customName: SessionNameStore.name(for: agent.pid),
-          agentSessionName: agent.name == "claude" ? lookupClaudeSessionName(pid: agent.pid) : nil
+          agentSessionName: agentSessionName
         )
       )
     }
@@ -161,9 +162,10 @@ final class AgentScanner: ObservableObject {
         if $0.needsAttentionRank != $1.needsAttentionRank {
           return $0.needsAttentionRank > $1.needsAttentionRank
         }
-        // Waiting bucket (rank 2): longest-waiting first — most overdue
-        // for a response. Every other bucket falls back to plain recency.
-        if $0.needsAttentionRank == 2 { return olderFirst($0, $1) }
+        // Idle bucket (rank 1, the top bucket): longest-idle first — the
+        // agent that's been awaiting you the longest. Every other bucket
+        // falls back to plain recency.
+        if $0.needsAttentionRank == 1 { return olderFirst($0, $1) }
         return newerFirst($0, $1)
       }
     case .yourActivity:
@@ -264,52 +266,94 @@ final class AgentScanner: ObservableObject {
     return tree
   }
 
-  // MARK: - aistatus lookup
+  // MARK: - status lookup
 
-  /// No age cutoff here (unlike `,tmux-ai-agents`'s 2h `STALE_SECS`,
-  /// which just falls back to a plain "idle" once a file is old) — the pid
-  /// tree scan already guarantees this pid is a still-live process, so an
-  /// old timestamp is a meaningful "hasn't updated in a while" signal, not
-  /// stale/wrong data. `AgentSession.isStale` (>3h) decides how that's
+  /// Returns `(status, project, lastUpdated, sessionId, agentSessionName)`.
+  ///
+  /// `claude` reads everything from `~/.claude/sessions/<pid>.json` — Claude
+  /// Code's own live process registry, which is fresher and more reliable
+  /// than the hook-driven aistatus file (it's written by the CLI itself, not
+  /// by a hook that has to fire). `pi` has no such registry, so it still reads
+  /// the aistatus file.
+  ///
+  /// No age cutoff here (unlike `,tmux-ai-agents`'s 2h `STALE_SECS`, which
+  /// just falls back to a plain "idle" once a file is old) — the pid tree
+  /// scan already guarantees this pid is a still-live process, so an old
+  /// timestamp is a meaningful "hasn't updated in a while" signal, not
+  /// stale/wrong data. `AgentSession.isQuiet`/`isStale` decide how that's
   /// drawn, at the display layer, not here.
-  private func lookupStatus(pid: Int32, fallbackPath: String) -> (
-    AgentStatus, String, Date?, String?
+  private func lookupStatus(pid: Int32, agentName: String, fallbackPath: String) -> (
+    AgentStatus, String, Date?, String?, String?
   ) {
+    if agentName == "claude" {
+      return lookupClaudeStatus(pid: pid, fallbackPath: fallbackPath)
+    }
+
     let file = statusDir.appendingPathComponent("pid-\(pid).json")
     guard let data = try? Data(contentsOf: file),
       let parsed = try? JSONDecoder().decode(AIStatusFile.self, from: data),
       let ts = parsed.timestamp
     else {
-      return (.idle, (fallbackPath as NSString).lastPathComponent, nil, nil)
+      return (.idle, (fallbackPath as NSString).lastPathComponent, nil, nil, nil)
     }
 
+    // A missing/unknown status word (including the old "waiting", which is no
+    // longer a state) collapses to `.idle`; only "working" maps to `.working`.
     let status = AgentStatus(rawValue: parsed.status ?? "idle") ?? .idle
     let project = parsed.project ?? (fallbackPath as NSString).lastPathComponent
-    return (status, project, Date(timeIntervalSince1970: ts), parsed.sessionId)
+    return (status, project, Date(timeIntervalSince1970: ts), parsed.sessionId, nil)
   }
-
-  // MARK: - Claude session name lookup
 
   /// Claude Code maintains `~/.claude/sessions/<pid>.json` per live process
   /// (pruned when the process exits — confirmed against real files on this
-  /// machine: only the currently-running pids exist). `name` is the session's
-  /// title, but `nameSource: "derived"` marks an auto-generated placeholder
-  /// (just the cwd's last component plus a hash suffix, e.g. "monica-dd") —
-  /// those are skipped, since showing one would be strictly noisier than the
-  /// plain project name it's derived from. Explicitly named sessions carry no
+  /// machine: only the currently-running pids exist). Observed `status` values
+  /// are `busy` (running a task), `waiting` (blocked mid-task on a dialog /
+  /// permission prompt, with a `waitingFor` detail), and `idle` (finished its
+  /// turn, at the prompt) — only `busy` maps to `.working`; `waiting` and
+  /// `idle` both map to `.idle` (see `lookupClaudeStatus`).
+  /// `updatedAt`/`statusUpdatedAt`
+  /// are epoch *milliseconds*. `name` is the session's title, but
+  /// `nameSource: "derived"` marks an auto-generated placeholder (just the
+  /// cwd's last component plus a hash suffix, e.g. "monica-dd") — those are
+  /// skipped, since showing one would be strictly noisier than the plain
+  /// project name it's derived from. Explicitly named sessions carry no
   /// `nameSource` field.
   private struct ClaudeSessionFile: Decodable {
+    var status: String?
+    var cwd: String?
+    var sessionId: String?
+    var updatedAt: Double?
+    var statusUpdatedAt: Double?
     var name: String?
     var nameSource: String?
   }
 
-  private func lookupClaudeSessionName(pid: Int32) -> String? {
+  private func lookupClaudeStatus(pid: Int32, fallbackPath: String) -> (
+    AgentStatus, String, Date?, String?, String?
+  ) {
     let file = claudeSessionsDir.appendingPathComponent("\(pid).json")
     guard let data = try? Data(contentsOf: file),
-      let parsed = try? JSONDecoder().decode(ClaudeSessionFile.self, from: data),
-      parsed.nameSource != "derived",
-      let name = parsed.name, !name.isEmpty
-    else { return nil }
-    return name
+      let parsed = try? JSONDecoder().decode(ClaudeSessionFile.self, from: data)
+    else {
+      return (.idle, (fallbackPath as NSString).lastPathComponent, nil, nil, nil)
+    }
+
+    // Only "busy" (actively running a task) is `.working`; everything else —
+    // "idle", and "waiting" (blocked on a dialog/permission prompt, which we
+    // treat as idle rather than as its own state) — is `.idle`.
+    let status: AgentStatus = parsed.status == "busy" ? .working : .idle
+    let project = (parsed.cwd as NSString?)?.lastPathComponent
+      ?? (fallbackPath as NSString).lastPathComponent
+    // Most-recent registry write is the best "last active" proxy — see the
+    // doc comment above; the two timestamps are usually equal but take the max.
+    let lastUpdated = [parsed.updatedAt, parsed.statusUpdatedAt].compactMap { $0 }.max()
+      .map { Date(timeIntervalSince1970: $0 / 1000) }
+    let agentSessionName: String? = {
+      guard parsed.nameSource != "derived", let name = parsed.name, !name.isEmpty else {
+        return nil
+      }
+      return name
+    }()
+    return (status, project, lastUpdated, parsed.sessionId, agentSessionName)
   }
 }

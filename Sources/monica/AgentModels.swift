@@ -1,16 +1,21 @@
 import Foundation
 
+/// Only two live states: `working` (Claude Code's `busy`) and `idle`
+/// (everything else — the agent finished its turn and is awaiting you).
+/// There is deliberately no `waiting` — the sessions-file status monica now
+/// reads (see `AgentScanner.lookupStatus`) only distinguishes busy/idle, so a
+/// separate "blocked on you" state can't be told apart reliably; it collapses
+/// into `idle`. Staleness (see `AgentSession.isQuiet`/`isStale`) is a separate
+/// time-based overlay, not a status value.
 enum AgentStatus: String, Comparable {
   case idle
-  case waiting
   case working
 
-  /// working > waiting > idle, matching `,tmux-claude-status`'s priority rule.
+  /// working > idle.
   private var priority: Int {
     switch self {
     case .idle: return 0
-    case .waiting: return 1
-    case .working: return 2
+    case .working: return 1
     }
   }
 
@@ -22,7 +27,6 @@ enum AgentStatus: String, Comparable {
   var glyph: String {
     switch self {
     case .working: return "▶"
-    case .waiting: return "●"
     case .idle: return "○"
     }
   }
@@ -39,9 +43,10 @@ struct AgentSession: Identifiable, Equatable {
   var status: AgentStatus
   var project: String
   var lastUpdated: Date?
-  /// From the aistatus file's `session_id` — used to locate the agent's own
-  /// transcript for the message preview. `nil` if the status file was
-  /// missing/stale (see `AgentScanner.lookupStatus`).
+  /// The agent's session id — used to locate the agent's own transcript for
+  /// the message preview. For claude it comes from `~/.claude/sessions/<pid>.json`,
+  /// for pi from the aistatus file's `session_id`. `nil` if neither source
+  /// had it (see `AgentScanner.lookupStatus`).
   var sessionId: String?
   /// User-assigned name for this session (⌘R / the row's "Rename…" context
   /// menu action), read from `SessionNameStore` on each scan. Purely a
@@ -77,7 +82,7 @@ struct AgentSession: Identifiable, Equatable {
   private static let quietThreshold: TimeInterval = 15 * 60
 
   /// True once a last-update timestamp is more than 3h old, *or* there's no
-  /// aistatus file for this pid at all (`lastUpdated == nil`) — no file
+  /// status file for this pid at all (`lastUpdated == nil`) — no file
   /// means we have no real signal for this session, which is just as
   /// untrustworthy as a stale one. Doesn't change `status` itself, just how
   /// it's drawn (see `displayGlyph`) — the underlying pid is still confirmed
@@ -111,30 +116,29 @@ struct AgentSession: Identifiable, Equatable {
   /// (regardless of what `status` itself says, same as `displayGlyph`),
   /// since they're more likely a dead/uncertain session than one actually
   /// wanting attention; within "real" statuses this reuses `AgentStatus`'s
-  /// own `working > waiting > idle` priority.
+  /// own `working > idle` priority. Sorted descending, this yields
+  /// working → idle → quiet → stale.
   var sortPriorityRank: Int {
     if isStale { return -2 }
     if isQuiet { return -1 }
     switch status {
     case .idle: return 0
-    case .waiting: return 1
-    case .working: return 2
+    case .working: return 1
     }
   }
 
   /// Used by `AgentScanner.scan()`'s `.needsAttention` `SortMode`. Unlike
-  /// `sortPriorityRank` (which mirrors `AgentStatus`'s own
-  /// working > waiting > idle priority), this puts `waiting` on top —
-  /// an agent blocked on you is usually more urgent to see than one still
-  /// churning away unattended. Stale/quiet still override to the bottom,
-  /// same reasoning as `sortPriorityRank`/`displayGlyph`.
+  /// `sortPriorityRank` (which mirrors `AgentStatus`'s own working > idle
+  /// priority), this puts `idle` on top — an agent that's finished its turn
+  /// and is awaiting you is what most needs your attention, more than one
+  /// still churning away unattended. Stale/quiet still override to the
+  /// bottom, same reasoning as `sortPriorityRank`/`displayGlyph`.
   var needsAttentionRank: Int {
     if isStale { return -2 }
     if isQuiet { return -1 }
     switch status {
-    case .idle: return 0
-    case .working: return 1
-    case .waiting: return 2
+    case .working: return 0
+    case .idle: return 1
     }
   }
 }

@@ -1,169 +1,29 @@
 # Setup
 
 Monica doesn't talk to Claude Code or `pi` directly — it discovers live processes
-from the tmux pane tree, then reads status from JSON files under
-`~/.local/share/aistatus/pid-<pid>.json`. Those files are written by a Claude Code
-hook and a `pi` extension, both listed below. Without one of these in place, an
-agent will show up in the list (Monica can see the tmux pane and process) but
-without a status glyph, and without a "last message" preview.
+from the tmux pane tree, then reads each agent's status:
 
-Monica only reads this directory — it never writes to it, so nothing here breaks if
-you edit the hook/extension yourselves.
+- **Claude Code**: works out of the box — no configuration. Status comes from
+  Claude Code's own live process registry, `~/.claude/sessions/<pid>.json`, which the
+  CLI writes itself, so claude agents get a status glyph automatically.
+- **`pi`**: needs the one-time `pi` tmux-status extension below, which writes
+  `~/.local/share/aistatus/pid-<pid>.json`. Without it, a pi agent still shows up in
+  the list (Monica can see the tmux pane and process) but without a status glyph.
+
+So the only setup on this page is the `pi` extension, and only if you use `pi`. Monica
+only reads these files — it never writes to them, so nothing breaks if you edit the
+extension yourself.
 
 ## Claude Code
 
-Add an `update-status.sh` hook script, then wire it into `~/.claude/settings.json`.
+Nothing to set up. Monica reads Claude Code's own live process registry —
+`~/.claude/sessions/<pid>.json`, which the CLI writes and keeps current itself (status,
+working directory, session id, session name) — so claude agents show a status glyph
+automatically.
 
-`~/.claude/hooks/update-status.sh`:
-
-```bash
-#!/usr/bin/env bash
-# Update Claude session status for tmux window status display.
-# Writes to ~/.local/share/aistatus/pid-<pid>.json
-
-INPUT=$(cat)
-
-SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
-[ -z "$SESSION_ID" ] && exit 0
-
-[ -z "${TMUX_PANE:-}" ] && exit 0
-
-# This hook runs as a child of the claude process itself, but walk up a few
-# levels just in case an intermediate shell/wrapper is in between.
-find_claude_pid() {
-  p="$PPID"
-  for _ in 1 2 3 4 5; do
-    [ -z "$p" ] && break
-    base=$(basename "$(ps -o comm= -p "$p" 2>/dev/null)" 2>/dev/null)
-    if [ "$base" = "claude" ]; then
-      echo "$p"
-      return
-    fi
-    p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
-    [ -z "$p" ] || [ "$p" = "1" ] && break
-  done
-  echo "$PPID"
-}
-PID=$(find_claude_pid)
-[ -z "$PID" ] && exit 0
-
-HOOK_EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
-CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
-PROJECT=$(basename "$CWD")
-
-case "$HOOK_EVENT" in
-  Stop)         STATUS="idle" ;;
-  Notification) STATUS="waiting" ;;
-  *)            STATUS="working" ;;
-esac
-
-STATUS_DIR="$HOME/.local/share/aistatus"
-mkdir -p "$STATUS_DIR"
-
-TMP=$(mktemp "$STATUS_DIR/.tmp.XXXXXX")
-jq -n \
-  --arg session_id "$SESSION_ID" \
-  --argjson pid "$PID" \
-  --arg status "$STATUS" \
-  --arg hook_event "$HOOK_EVENT" \
-  --arg project "$PROJECT" \
-  --argjson timestamp "$(date +%s)" \
-  '{session_id: $session_id, pid: $pid, status: $status, hook_event: $hook_event, project: $project, timestamp: $timestamp}' \
-  > "$TMP" && mv "$TMP" "$STATUS_DIR/pid-${PID}.json"
-```
-
-Make it executable: `chmod +x ~/.claude/hooks/update-status.sh`.
-
-Then register it for the `Stop`, `Notification`, `UserPromptSubmit`, and
-`PostToolUse` hooks in `~/.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "Notification": [
-      { "hooks": [{ "type": "command", "command": "~/.claude/hooks/update-status.sh || exit 0" }] }
-    ],
-    "Stop": [
-      { "hooks": [{ "type": "command", "command": "~/.claude/hooks/update-status.sh || exit 0" }] }
-    ],
-    "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "~/.claude/hooks/update-status.sh || exit 0", "async": true }] }
-    ],
-    "PostToolUse": [
-      { "hooks": [{ "type": "command", "command": "~/.claude/hooks/update-status.sh || exit 0", "async": true }] }
-    ]
-  }
-}
-```
-
-`Stop` maps to `idle`, `Notification` maps to `waiting` (Claude is blocked on you),
-everything else maps to `working`.
-
-Monica's "last message" preview for Claude Code reads
-`~/.claude/projects/<cwd, every non-alphanumeric char -> '-'>/<sessionId>.jsonl`
-directly — no extra setup needed there, that file already exists as part of
-Claude Code's own session storage.
-
-### Clearing stale status on `/clear`
-
-`/clear` starts a fresh session in the same pane/pid without a new `Stop` or
-`Notification` event, so the pid's status file can otherwise keep showing the
-previous session's stale glyph. Add a second hook script,
-`~/.claude/hooks/clear-status.sh`, that just removes the pid's status file:
-
-```bash
-#!/usr/bin/env bash
-# Remove the pid-keyed status file on /clear so stale status doesn't linger.
-# Triggered by SessionStart (matcher "clear").
-
-INPUT=$(cat)
-
-[ -z "${TMUX_PANE:-}" ] && exit 0
-
-# This hook runs as a child of the claude process itself, but walk up a few
-# levels just in case an intermediate shell/wrapper is in between.
-find_claude_pid() {
-  p="$PPID"
-  for _ in 1 2 3 4 5; do
-    [ -z "$p" ] && break
-    base=$(basename "$(ps -o comm= -p "$p" 2>/dev/null)" 2>/dev/null)
-    if [ "$base" = "claude" ]; then
-      echo "$p"
-      return
-    fi
-    p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
-    [ -z "$p" ] || [ "$p" = "1" ] && break
-  done
-  echo "$PPID"
-}
-PID=$(find_claude_pid)
-[ -z "$PID" ] && exit 0
-
-rm -f "$HOME/.local/share/aistatus/pid-${PID}.json"
-```
-
-Make it executable (`chmod +x ~/.claude/hooks/clear-status.sh`) and register it
-for `SessionStart` with the `clear` matcher, so it only fires on `/clear` and
-not on every new session:
-
-```json
-{
-  "hooks": {
-    "SessionStart": [
-      {
-        "matcher": "clear",
-        "hooks": [{ "type": "command", "command": "~/.claude/hooks/clear-status.sh || exit 0" }]
-      }
-    ]
-  }
-}
-```
-
-Without this, an agent that runs `/clear` keeps showing its old status glyph
-(and stale "last message" preview) until the next `Stop`/`Notification` event
-overwrites the file — this hook deletes it immediately instead, so Monica falls
-back to showing the agent with no status glyph until the new session emits its
-first real event.
+The "last message" preview likewise reads Claude Code's own session storage,
+`~/.claude/projects/<cwd, every non-alphanumeric char -> '-'>/<sessionId>.jsonl`,
+directly — again, nothing to configure.
 
 ## pi
 
@@ -222,9 +82,8 @@ export default function (pi: ExtensionAPI) {
 ```
 
 pi loads any `.ts` file under `~/.pi/agent/extensions/` automatically, no
-registration step needed beyond placing the file there. Unlike Claude Code, pi has
-no separate "waiting on you" state — `agent_start` maps to `working`, `agent_end`
-maps to `idle`.
+registration step needed beyond placing the file there. It reports two states:
+`agent_start` maps to `working`, `agent_end` maps to `idle`.
 
 Monica's "last message" preview for `pi` reads session files under
 `~/.pi/agent/sessions/<"-" + cwd.replacingOccurrences(of: "/", with: "-") + "--">/`
@@ -234,12 +93,17 @@ files. This is part of pi's own session storage; no extra setup needed.
 
 ## Troubleshooting
 
-- **An agent has no status glyph / shows as stale**: check the hook/extension is
-  actually writing `~/.local/share/aistatus/pid-<pid>.json` for that process — the
+- **A claude agent has no status glyph**: Claude Code writes
+  `~/.claude/sessions/<pid>.json` for each live process on its own — confirm the file
+  exists for that pid. If it doesn't, it's a Claude Code / version issue, not a Monica
+  one.
+- **A pi agent has no status glyph / shows as stale**: check the tmux-status extension
+  is actually writing `~/.local/share/aistatus/pid-<pid>.json` for that process — the
   file is keyed by the agent process's pid, not the tmux pane id.
-- **"Last message" preview is empty or "(preview unavailable)"**: the session id in
-  the aistatus file must match a real transcript/session file on disk. Check the
-  path conventions above for the corresponding agent.
+- **"Last message" preview is empty or "(preview unavailable)"**: the session id
+  (from the sessions registry for claude, or the aistatus file for pi) must match a
+  real transcript/session file on disk. Check the path conventions above for the
+  corresponding agent.
 - **tmux not found**: Monica resolves `tmux`'s path via `zsh -lc 'command -v tmux'`
   once at startup, since GUI apps launched by launchd don't inherit your shell's
   `PATH`. Make sure `tmux` is on the `PATH` in a login shell.

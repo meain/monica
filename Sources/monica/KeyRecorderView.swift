@@ -40,7 +40,7 @@ final class KeyRecorderModel: ObservableObject {
 }
 
 /// Bound to whichever keyCode/modifiers pair the caller passes — used for
-/// both the main popover hotkey and the jump-to-next-waiting hotkey, so the
+/// both the main popover hotkey and the jump-to-next-idle hotkey, so the
 /// recording UI/logic isn't duplicated per hotkey.
 struct KeyRecorderView: View {
   @Binding var keyCode: UInt32

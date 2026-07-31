@@ -15,7 +15,7 @@ final class HotKeyManager {
   private let signature: OSType = 0x6d6f_6e69
 
   /// Unique per instance — monica registers two independent hotkeys (the
-  /// main popover one and jump-to-next-waiting), each via its own
+  /// main popover one and jump-to-next-idle), each via its own
   /// `HotKeyManager`. Every instance previously hardcoded `id: 1`, and the
   /// event handler below never checked the fired event's id against its
   /// own before acting — so whichever instance's `InstallEventHandler`

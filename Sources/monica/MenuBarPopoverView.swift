@@ -403,7 +403,7 @@ private struct ShortcutsHelpSection: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 6) {
           ShortcutRow(title: "Open the picker", keys: [hotKeyLabel])
-          ShortcutRow(title: "Jump to next waiting", keys: [jumpHotKeyLabel])
+          ShortcutRow(title: "Jump to next idle", keys: [jumpHotKeyLabel])
           ShortcutRow(title: "Filter and move", keys: ["type", "↑", "↓"])
           ShortcutRow(title: "Switch to selected agent", keys: ["↩"])
           ShortcutRow(title: "Send a message without switching", keys: ["⌘↩"])
@@ -442,7 +442,7 @@ private struct FooterSection: View {
     let filterWord: String?
   }
 
-  /// "2 working · 1 waiting · 4 agents" as individually tappable segments —
+  /// "2 working · 1 idle · 4 agents" as individually tappable segments —
   /// always sums over *all* agents, not the filtered list, so it stays a
   /// status readout rather than a search-result count (the search field
   /// already shows that).
@@ -451,14 +451,14 @@ private struct FooterSection: View {
     guard !sessions.isEmpty else { return [StatusChip(label: "No agents", filterWord: nil)] }
     var result: [StatusChip] = []
     let working = sessions.filter { $0.status == .working && !$0.isStale && !$0.isQuiet }.count
-    let waiting = sessions.filter { $0.status == .waiting && !$0.isStale && !$0.isQuiet }.count
+    let idle = sessions.filter { $0.status == .idle && !$0.isStale && !$0.isQuiet }.count
     if working > 0 {
       result.append(StatusChip(label: "\(working) working", filterWord: "working"))
     }
-    if waiting > 0 {
-      result.append(StatusChip(label: "\(waiting) waiting", filterWord: "waiting"))
+    if idle > 0 {
+      result.append(StatusChip(label: "\(idle) idle", filterWord: "idle"))
     }
-    if result.isEmpty { result.append(StatusChip(label: "all idle", filterWord: "idle")) }
+    if result.isEmpty { result.append(StatusChip(label: "all quiet", filterWord: "quiet")) }
     result.append(
       StatusChip(
         label: "\(sessions.count) agent\(sessions.count == 1 ? "" : "s")", filterWord: nil))

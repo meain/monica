@@ -9,7 +9,6 @@ enum StatusStyle {
     guard !isStale, !isQuiet else { return .secondary }
     switch status {
     case .working: return .green
-    case .waiting: return .yellow
     case .idle: return .secondary
     }
   }
@@ -31,11 +30,11 @@ enum StatusStyle {
   }
 }
 
-/// The row's leading status indicator: a filled dot for working/waiting
-/// (working gets a soft glow so it reads as "live" at a glance), a hollow
-/// ring for idle, a filled gray dot once quiet (15m-3h since the last status
-/// update), and a dashed ring for stale — the same shape language as the
-/// menu bar glyphs (▶ ● ○ ● ◌) without mixing text glyphs into the rows.
+/// The row's leading status indicator: a filled dot with a soft glow for
+/// working (so it reads as "live" at a glance), a hollow ring for idle, a
+/// filled gray dot once quiet (15m-3h since the last status update), and a
+/// dashed ring for stale — the same shape language as the menu bar glyphs
+/// (▶ ○ ● ◌) without mixing text glyphs into the rows.
 struct StatusIndicator: View {
   let status: AgentStatus
   let isStale: Bool
@@ -59,9 +58,6 @@ struct StatusIndicator: View {
           Circle()
             .fill(color)
             .shadow(color: color.opacity(0.7), radius: 3)
-        case .waiting:
-          Circle()
-            .fill(color)
         case .idle:
           Circle()
             .strokeBorder(color, lineWidth: 1.5)

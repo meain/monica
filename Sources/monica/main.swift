@@ -12,8 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var menuBar: MenuBarController?
   private var settingsWindow: SettingsWindowController?
 
-  /// Which pane the jump-to-next-waiting hotkey last switched to, so
-  /// repeated presses cycle forward through `.waiting` agents instead of
+  /// Which pane the jump-to-next-idle hotkey last switched to, so
+  /// repeated presses cycle forward through `.idle` agents instead of
   /// always landing on the first one.
   private var lastJumpedPaneId: String?
 
@@ -73,10 +73,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     AppSettings.shared.hotKeyRegistrationFailed = !succeeded
   }
 
-  /// Bypasses the popover entirely: cycles through non-stale `.waiting`
-  /// agents (in the scanner's most-recently-updated-first order) on each
-  /// press, wrapping back to the first once the end is reached or the
-  /// previously-jumped-to pane is no longer waiting.
+  /// Bypasses the popover entirely: cycles through fresh `.idle` agents
+  /// (finished their turn and awaiting you; stale/quiet ones excluded) in the
+  /// scanner's most-recently-updated-first order on each press, wrapping back
+  /// to the first once the end is reached or the previously-jumped-to pane is
+  /// no longer idle.
   @MainActor
   private func registerJumpHotKey() {
     guard let jumpHotKeyManager else { return }
@@ -84,24 +85,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       keyCode: AppSettings.shared.jumpHotKeyCode,
       modifiers: AppSettings.shared.jumpHotKeyModifiers
     ) { [weak self] in
-      self?.jumpToNextWaiting()
+      self?.jumpToNextIdle()
     }
     AppSettings.shared.jumpHotKeyRegistrationFailed = !succeeded
   }
 
   @MainActor
-  private func jumpToNextWaiting() {
+  private func jumpToNextIdle() {
     guard let scanner else { return }
-    let waiting = scanner.sessions.filter { $0.status == .waiting && !$0.isStale }
-    guard !waiting.isEmpty else { return }
+    let idle = scanner.sessions.filter { $0.status == .idle && !$0.isStale && !$0.isQuiet }
+    guard !idle.isEmpty else { return }
     let nextIndex: Int
-    if let lastJumpedPaneId, let idx = waiting.firstIndex(where: { $0.paneId == lastJumpedPaneId })
+    if let lastJumpedPaneId, let idx = idle.firstIndex(where: { $0.paneId == lastJumpedPaneId })
     {
-      nextIndex = (idx + 1) % waiting.count
+      nextIndex = (idx + 1) % idle.count
     } else {
       nextIndex = 0
     }
-    let target = waiting[nextIndex]
+    let target = idle[nextIndex]
     lastJumpedPaneId = target.paneId
     Switcher.activate(target, targetApp: AppSettings.shared.targetApp)
   }

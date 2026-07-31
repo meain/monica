@@ -47,7 +47,7 @@ enum SortMode: String, CaseIterable, Identifiable {
       return "Whichever agent posted a status update most recently."
     case .statusPriority:
       return
-        "Working agents first, then waiting, then idle. Quiet/stale agents always sink to the bottom."
+        "Working agents first, then idle. Quiet/stale agents always sink to the bottom."
     case .stalestFirst:
       return "The agent you haven't checked on in the longest — the inverse of Recency."
     case .alphabeticalProject:
@@ -62,8 +62,8 @@ enum SortMode: String, CaseIterable, Identifiable {
         + "order you last attached to them."
     case .needsAttention:
       return
-        "Longest-waiting agent first (most overdue for a response), then the most recently "
-        + "active working agent."
+        "Idle agents first — the ones finished and awaiting you, longest-idle first (most "
+        + "overdue for a response) — then working agents. Quiet/stale sink to the bottom."
     case .yourActivity:
       return
         "Whichever agent you personally switched to most recently, regardless of its own activity."
@@ -121,7 +121,7 @@ final class AppSettings: ObservableObject {
   @Published var hotKeyRegistrationFailed: Bool = false
 
   /// A second, independent global hotkey that jumps straight to the next
-  /// `.waiting` agent (cycling on repeated presses) without opening the
+  /// `.idle` agent (cycling on repeated presses) without opening the
   /// popover at all — default ⌃⌥⇧W, same reasoning as `hotKeyCode`'s doc
   /// comment for avoiding the Hammerspoon hyper-key prefix.
   @Published var jumpHotKeyCode: UInt32 {
@@ -133,7 +133,7 @@ final class AppSettings: ObservableObject {
   }
 
   /// Not persisted — same purpose as `hotKeyRegistrationFailed` but for the
-  /// jump-to-next-waiting hotkey.
+  /// jump-to-next-idle hotkey.
   @Published var jumpHotKeyRegistrationFailed: Bool = false
 
   /// Extra transcript context shown in the popover's "LAST MESSAGE" preview

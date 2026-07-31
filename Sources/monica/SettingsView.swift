@@ -97,13 +97,10 @@ struct SettingsView: View {
   }
 
   // Same categorization `MenuBarPopoverView`'s footer summary uses: working/
-  // waiting/idle all require !isStale && !isQuiet, since those two states
-  // override the glyph regardless of the underlying status.
+  // idle both require !isStale && !isQuiet, since those two states override
+  // the glyph regardless of the underlying status.
   private var workingCount: Int {
     scanner.sessions.filter { $0.status == .working && !$0.isStale && !$0.isQuiet }.count
-  }
-  private var waitingCount: Int {
-    scanner.sessions.filter { $0.status == .waiting && !$0.isStale && !$0.isQuiet }.count
   }
   private var idleCount: Int {
     scanner.sessions.filter { $0.status == .idle && !$0.isStale && !$0.isQuiet }.count
@@ -192,11 +189,8 @@ struct SettingsView: View {
           glyph: "▶", color: .green, name: "Working", detail: "Running a task right now",
           count: workingCount)
         LegendRow(
-          glyph: "●", color: .yellow, name: "Waiting", detail: "Needs your input",
-          count: waitingCount)
-        LegendRow(
-          glyph: "○", color: .secondary, name: "Idle", detail: "Nothing in progress",
-          count: idleCount)
+          glyph: "○", color: .secondary, name: "Idle",
+          detail: "Finished its turn — awaiting you", count: idleCount)
         LegendRow(
           glyph: "●", color: .secondary, name: "Quiet",
           detail: "No status updates for 15+ minutes", count: quietCount)
@@ -290,11 +284,11 @@ struct SettingsView: View {
           keyCode: $settings.jumpHotKeyCode, modifiers: $settings.jumpHotKeyModifiers,
           onChange: onJumpHotKeyChanged)
       } header: {
-        Text("Jump to next waiting agent")
+        Text("Jump to next idle agent")
       } footer: {
         Text(
-          "Switches straight to the next agent that's waiting on you, cycling on repeated "
-            + "presses — no popover needed."
+          "Switches straight to the next idle agent (finished and awaiting you), cycling on "
+            + "repeated presses — no popover needed."
         )
         .font(.caption)
         .foregroundColor(.secondary)
