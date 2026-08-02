@@ -96,8 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let idle = scanner.sessions.filter { $0.status == .idle && !$0.isStale && !$0.isQuiet }
     guard !idle.isEmpty else { return }
     let nextIndex: Int
-    if let lastJumpedPaneId, let idx = idle.firstIndex(where: { $0.paneId == lastJumpedPaneId })
-    {
+    if let lastJumpedPaneId, let idx = idle.firstIndex(where: { $0.paneId == lastJumpedPaneId }) {
       nextIndex = (idx + 1) % idle.count
     } else {
       nextIndex = 0

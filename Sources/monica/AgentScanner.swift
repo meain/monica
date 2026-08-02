@@ -342,7 +342,8 @@ final class AgentScanner: ObservableObject {
     // "idle", and "waiting" (blocked on a dialog/permission prompt, which we
     // treat as idle rather than as its own state) — is `.idle`.
     let status: AgentStatus = parsed.status == "busy" ? .working : .idle
-    let project = (parsed.cwd as NSString?)?.lastPathComponent
+    let project =
+      (parsed.cwd as NSString?)?.lastPathComponent
       ?? (fallbackPath as NSString).lastPathComponent
     // Most-recent registry write is the best "last active" proxy — see the
     // doc comment above; the two timestamps are usually equal but take the max.
