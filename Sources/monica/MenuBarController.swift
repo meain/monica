@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// `NSStatusItem` + `NSPopover`, templated on mactraffic's `StatusBarController`.
@@ -15,6 +16,7 @@ final class MenuBarController {
   private let scanner: AgentScanner
   private let model = AgentPickerModel()
   private var titleTimer: Timer?
+  private var sessionsSubscription: AnyCancellable?
 
   /// Whichever app was frontmost right before `openPopover()` activated
   /// monica itself — restored on cancel/send-message so escaping the
@@ -68,9 +70,20 @@ final class MenuBarController {
     )
     popover.contentViewController = NSHostingController(rootView: content)
 
-    updateTitle()
+    updateTitle(scanner.sessions)
+    // Changes land immediately (the scanner only publishes when something
+    // actually changed, and status-file edits trigger a scan within ~100ms);
+    // the 1s timer is just for time-based display — quiet/stale glyphs and
+    // the rows' "Ns ago" labels age even when no data changes. `$sessions`
+    // fires in willSet, so the new value is passed in rather than re-read.
+    sessionsSubscription = scanner.$sessions.sink { [weak self] sessions in
+      self?.updateTitle(sessions)
+    }
     titleTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-      Task { @MainActor in self?.updateTitle() }
+      Task { @MainActor in
+        guard let self else { return }
+        self.updateTitle(self.scanner.sessions)
+      }
     }
   }
 
@@ -134,8 +147,10 @@ final class MenuBarController {
   private func openPopover() {
     guard let button = statusItem.button else { return }
     previousApp = NSWorkspace.shared.frontmostApplication
-    scanner.scan()
+    // Open instantly on the last scan's data rather than blocking on a fresh
+    // one; the rescan's result arrives via `refreshData` a moment later.
     model.activate(sessions: scanner.sessions)
+    scanner.requestScan(.full)
     resizeForScreen()
     NSApp.activate(ignoringOtherApps: true)
     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -197,9 +212,8 @@ final class MenuBarController {
   /// One glyph per agent, colored by status — the same "at a glance" display
   /// the old always-on HUD strip gave, now living directly in the menu bar
   /// title instead of a separate floating window.
-  private func updateTitle() {
+  private func updateTitle(_ sessions: [AgentSession]) {
     guard let button = statusItem.button else { return }
-    let sessions = scanner.sessions
     // Menlo, not the SF monospaced system font: SF mono has no ◌ (U+25CC), so
     // the stale glyph silently fell back to Menlo while ▶ ● ○ stayed SF —
     // mismatched sizes/baselines, visibly misaligned in the menu bar. Menlo

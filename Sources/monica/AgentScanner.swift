@@ -1,3 +1,4 @@
+import CoreServices
 import Foundation
 
 /// The aistatus file, still the only status source for `pi` (which has no
@@ -33,77 +34,205 @@ private func olderFirst(_ a: AgentSession, _ b: AgentSession) -> Bool {
 
 /// Ports `,tmux-agent-scan` + the aistatus lookup from `,tmux-ai-agents` natively,
 /// so monica has no runtime dependency on the dotfiles scripts.
+///
+/// Two kinds of scan, both run off the main thread on `queue` (a scan spawns
+/// `tmux`/`ps` — ~60ms normally, 200ms+ under load, and unbounded if the tmux
+/// server wedges — which used to block the UI every tick):
+///
+/// - **full**: `tmux list-panes` + `ps` pid-tree walk + status files. Runs on
+///   the `pollInterval` timer, on popover open, and when a status file appears
+///   or disappears for a pid we don't know about (a new/exited agent).
+/// - **status**: re-reads only the status files for the agents the last full
+///   scan found. Triggered by FSEvents on the two status directories, so a
+///   working → idle flip shows up within ~100ms instead of up to a poll tick
+///   later, without spawning any processes.
+///
+/// Requests coalesce: at most one scan is in flight, and requests arriving
+/// meanwhile collapse into a single follow-up (full wins over status).
+/// `sessions` is only reassigned when the result actually changed, so
+/// SwiftUI observers don't re-render on every tick.
 @MainActor
 final class AgentScanner: ObservableObject {
-  @Published var sessions: [AgentSession] = []
+  @Published private(set) var sessions: [AgentSession] = []
+
+  enum ScanKind { case status, full }
 
   private var timer: Timer?
-  private let statusDir = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent(".local/share/aistatus")
-  private let claudeSessionsDir = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent(".claude/sessions")
+  private var watcher: StatusDirWatcher?
+  private let queue = DispatchQueue(label: "com.meain.monica.scan", qos: .userInitiated)
+  private var inFlight = false
+  private var pending: ScanKind?
+  /// What the last successful full scan found — the input to status-only
+  /// refreshes. Main-actor only; handed to `queue` by value.
+  private var agents: [ScanEngine.FoundAgent] = []
+  /// `agents`' pids, for deciding whether a status-file event is for an
+  /// agent we already know (status refresh) or a new/exited one (full scan).
+  private var knownPids = Set<Int32>()
 
   func start(interval: TimeInterval = 2.0) {
-    scan()
+    requestScan(.full)
     timer?.invalidate()
     timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-      Task { @MainActor in self?.scan() }
+      Task { @MainActor in self?.requestScan(.full) }
+    }
+    if watcher == nil {
+      watcher = StatusDirWatcher(paths: [ScanEngine.claudeSessionsDir, ScanEngine.statusDir]) {
+        [weak self] paths in
+        MainActor.assumeIsolated { self?.statusFilesChanged(paths) }
+      }
     }
   }
 
   func stop() {
     timer?.invalidate()
     timer = nil
+    watcher = nil
   }
 
-  func scan() {
-    let panes = listPanes()
-    guard !panes.isEmpty else {
-      sessions = []
+  func requestScan(_ kind: ScanKind = .full) {
+    guard !inFlight else {
+      pending = (pending == .full || kind == .full) ? .full : .status
       return
     }
+    inFlight = true
+    // Everything the background job needs from main-actor state is captured
+    // here, by value — the job itself touches nothing shared.
+    let input = ScanEngine.Input(
+      kind: kind,
+      previousAgents: agents,
+      sortMode: AppSettings.shared.sortMode,
+      lastActivated: Switcher.lastActivatedSnapshot()
+    )
+    queue.async { [weak self] in
+      let output = ScanEngine.run(input)
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated { self?.finish(output) }
+      }
+    }
+  }
 
-    // `uniquingKeysWith:` (not `uniqueKeysWithValues:`) since a window linked
-    // into multiple sessions (session groups) makes the same pane_id appear
-    // more than once in `list-panes -a` — see the loop below.
+  private func finish(_ output: ScanEngine.Output?) {
+    inFlight = false
+    // nil = tmux/ps didn't answer (timeout/launch failure): keep the previous
+    // list rather than blanking every agent over one transient hiccup.
+    if let output {
+      if let found = output.agents {
+        agents = found
+        knownPids = Set(found.map(\.pid))
+      }
+      if output.sessions != sessions { sessions = output.sessions }
+    }
+    if let next = pending {
+      pending = nil
+      requestScan(next)
+    }
+  }
+
+  /// FSEvents callback. `<pid>.json` (claude) / `pid-<pid>.json` (pi): a
+  /// change for a known pid is a status refresh; anything else (a new agent
+  /// registering, or an exited one's file being pruned) needs a full scan to
+  /// re-walk the pid tree.
+  private func statusFilesChanged(_ paths: [String]) {
+    var kind: ScanKind?
+    for path in paths {
+      let name = (path as NSString).lastPathComponent
+      guard name.hasSuffix(".json") else { continue }
+      let stem = name.dropLast(5)
+      let pidString = stem.hasPrefix("pid-") ? stem.dropFirst(4) : stem
+      guard let pid = Int32(pidString) else { continue }
+      let exists = FileManager.default.fileExists(atPath: path)
+      if !knownPids.contains(pid) && exists || knownPids.contains(pid) && !exists {
+        kind = .full
+        break
+      }
+      kind = .status
+    }
+    if let kind { requestScan(kind) }
+  }
+}
+
+/// The scan itself — pure functions of their input plus the filesystem/tmux,
+/// no main-actor state, so it runs on `AgentScanner`'s background queue.
+private enum ScanEngine {
+  static let statusDir = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".local/share/aistatus").path
+  static let claudeSessionsDir = FileManager.default.homeDirectoryForCurrentUser
+    .appendingPathComponent(".claude/sessions").path
+
+  /// A pane whose pid tree has a `claude`/`pi` process in it.
+  struct FoundAgent {
+    var pane: RawPane
+    var pid: Int32
+    var name: String
+  }
+
+  struct Input {
+    var kind: AgentScanner.ScanKind
+    var previousAgents: [FoundAgent]
+    var sortMode: SortMode
+    var lastActivated: [String: Date]
+  }
+
+  struct Output {
+    /// Set by full scans only — status refreshes reuse the previous list.
+    var agents: [FoundAgent]?
+    var sessions: [AgentSession]
+  }
+
+  static func run(_ input: Input) -> Output? {
+    var found = input.previousAgents
+    var freshAgents: [FoundAgent]?
+    if input.kind == .full {
+      guard let panes = listPanes(), let tree = buildProcessTree() else { return nil }
+      found = findAgents(panes: panes, tree: tree)
+      freshAgents = found
+    }
+
+    var result = found.map { agent in
+      let (status, project, lastUpdated, sessionId, agentSessionName) = lookupStatus(
+        pid: agent.pid, agentName: agent.name, fallbackPath: agent.pane.panePath)
+      return AgentSession(
+        paneId: agent.pane.paneId,
+        windowId: agent.pane.windowId,
+        session: agent.pane.session,
+        windowName: agent.pane.windowName,
+        panePath: agent.pane.panePath,
+        agentPid: agent.pid,
+        agentName: agent.name,
+        status: status,
+        project: project,
+        lastUpdated: lastUpdated,
+        sessionId: sessionId,
+        customName: SessionNameStore.name(for: agent.pid),
+        agentSessionName: agentSessionName
+      )
+    }
     let paneInfoByPaneId = Dictionary(
-      panes.map { ($0.paneId, $0) }, uniquingKeysWith: { first, _ in first })
-    let tree = buildProcessTree()
-    var seenPaneIds = Set<String>()
-    var result: [AgentSession] = []
+      found.map { ($0.pane.paneId, $0.pane) }, uniquingKeysWith: { first, _ in first })
+    sort(&result, input: input, paneInfoByPaneId: paneInfoByPaneId)
+    return Output(agents: freshAgents, sessions: result)
+  }
 
+  private static func findAgents(panes: [RawPane], tree: ProcessTree) -> [FoundAgent] {
+    var seenPaneIds = Set<String>()
+    var result: [FoundAgent] = []
     for pane in panes {
       // A window can be linked into multiple sessions (session groups),
       // so the same pane can appear more than once in `list-panes -a`.
       guard !seenPaneIds.contains(pane.paneId) else { continue }
       seenPaneIds.insert(pane.paneId)
-
       guard let agent = tree.findAgent(fromRoot: pane.panePid) else { continue }
-
-      let (status, project, lastUpdated, sessionId, agentSessionName) = lookupStatus(
-        pid: agent.pid, agentName: agent.name, fallbackPath: pane.panePath)
-      result.append(
-        AgentSession(
-          paneId: pane.paneId,
-          windowId: pane.windowId,
-          session: pane.session,
-          windowName: pane.windowName,
-          panePath: pane.panePath,
-          agentPid: agent.pid,
-          agentName: agent.name,
-          status: status,
-          project: project,
-          lastUpdated: lastUpdated,
-          sessionId: sessionId,
-          customName: SessionNameStore.name(for: agent.pid),
-          agentSessionName: agentSessionName
-        )
-      )
+      result.append(FoundAgent(pane: pane, pid: agent.pid, name: agent.name))
     }
+    return result
+  }
 
-    // Order is settings-driven (see `SortMode`) — read fresh each scan so a
-    // Settings change takes effect on the next tick without restarting.
-    switch AppSettings.shared.sortMode {
+  /// Order is settings-driven (see `SortMode`) — read fresh each scan so a
+  /// Settings change takes effect on the next tick without restarting.
+  private static func sort(
+    _ result: inout [AgentSession], input: Input, paneInfoByPaneId: [String: RawPane]
+  ) {
+    switch input.sortMode {
     case .recency:
       result.sort(by: newerFirst)
     case .statusPriority:
@@ -170,18 +299,17 @@ final class AgentScanner: ObservableObject {
       }
     case .yourActivity:
       result.sort {
-        let a0 = Switcher.lastActivated($0.paneId) ?? .distantPast
-        let a1 = Switcher.lastActivated($1.paneId) ?? .distantPast
+        let a0 = input.lastActivated[$0.paneId] ?? .distantPast
+        let a1 = input.lastActivated[$1.paneId] ?? .distantPast
         if a0 != a1 { return a0 > a1 }
         return newerFirst($0, $1)
       }
     }
-    sessions = result
   }
 
   // MARK: - tmux pane listing
 
-  private struct RawPane {
+  struct RawPane {
     var paneId: String
     var windowId: String
     var session: String
@@ -197,11 +325,12 @@ final class AgentScanner: ObservableObject {
     var sessionLastAttached: Double
   }
 
-  private func listPanes() -> [RawPane] {
+  /// nil only if tmux didn't answer at all (see `runCaptureChecked`); no
+  /// server running is a real, empty answer.
+  private static func listPanes() -> [RawPane]? {
     let format =
       "#{pane_id}\t#{window_id}\t#{?session_group,#{session_group},#{session_name}}\t#{window_name}\t#{pane_current_path}\t#{pane_pid}\t#{window_index}\t#{pane_index}\t#{session_last_attached}"
-    let output = TmuxCLI.run(["list-panes", "-a", "-F", format])
-    guard !output.isEmpty else { return [] }
+    guard let output = TmuxCLI.runChecked(["list-panes", "-a", "-F", format]) else { return nil }
 
     return output.split(separator: "\n").compactMap { line -> RawPane? in
       let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
@@ -221,14 +350,14 @@ final class AgentScanner: ObservableObject {
   /// The tmux session the (single, per DESIGN.md's assumption) attached
   /// client is currently on — the `.tmux` `SortMode`'s notion of "current
   /// session". Same single-client assumption as `Switcher.firstAttachedClient`.
-  private func currentTmuxSession() -> String? {
+  private static func currentTmuxSession() -> String? {
     let output = TmuxCLI.run(["list-clients", "-F", "#{client_session}"])
     return output.split(separator: "\n").first.map(String.init)
   }
 
   // MARK: - pid tree (BFS for a `claude`/`pi` descendant)
 
-  private struct ProcessTree {
+  struct ProcessTree {
     var childrenByPid: [Int32: [Int32]] = [:]
     var nameByPid: [Int32: String] = [:]
 
@@ -249,8 +378,8 @@ final class AgentScanner: ObservableObject {
     }
   }
 
-  private func buildProcessTree() -> ProcessTree {
-    let output = runCapture("/bin/ps", ["-Ao", "pid,ppid,comm"])
+  private static func buildProcessTree() -> ProcessTree? {
+    guard let output = runCaptureChecked("/bin/ps", ["-Ao", "pid,ppid,comm"]) else { return nil }
     var tree = ProcessTree()
     for line in output.split(separator: "\n").dropFirst() {
       let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -282,14 +411,14 @@ final class AgentScanner: ObservableObject {
   /// timestamp is a meaningful "hasn't updated in a while" signal, not
   /// stale/wrong data. `AgentSession.isQuiet`/`isStale` decide how that's
   /// drawn, at the display layer, not here.
-  private func lookupStatus(pid: Int32, agentName: String, fallbackPath: String) -> (
+  private static func lookupStatus(pid: Int32, agentName: String, fallbackPath: String) -> (
     AgentStatus, String, Date?, String?, String?
   ) {
     if agentName == "claude" {
       return lookupClaudeStatus(pid: pid, fallbackPath: fallbackPath)
     }
 
-    let file = statusDir.appendingPathComponent("pid-\(pid).json")
+    let file = URL(fileURLWithPath: statusDir).appendingPathComponent("pid-\(pid).json")
     guard let data = try? Data(contentsOf: file),
       let parsed = try? JSONDecoder().decode(AIStatusFile.self, from: data),
       let ts = parsed.timestamp
@@ -328,10 +457,10 @@ final class AgentScanner: ObservableObject {
     var nameSource: String?
   }
 
-  private func lookupClaudeStatus(pid: Int32, fallbackPath: String) -> (
+  private static func lookupClaudeStatus(pid: Int32, fallbackPath: String) -> (
     AgentStatus, String, Date?, String?, String?
   ) {
-    let file = claudeSessionsDir.appendingPathComponent("\(pid).json")
+    let file = URL(fileURLWithPath: claudeSessionsDir).appendingPathComponent("\(pid).json")
     guard let data = try? Data(contentsOf: file),
       let parsed = try? JSONDecoder().decode(ClaudeSessionFile.self, from: data)
     else {
@@ -356,5 +485,46 @@ final class AgentScanner: ObservableObject {
       return name
     }()
     return (status, project, lastUpdated, parsed.sessionId, agentSessionName)
+  }
+}
+
+/// File-level FSEvents on the status directories, delivered on the main
+/// queue with ~100ms coalescing. FSEvents rather than a `DispatchSource` on
+/// the directory fd: a directory source only fires on entries being
+/// added/removed/renamed, not on an existing file being rewritten in place,
+/// and which of those the status writers do isn't something to depend on.
+private final class StatusDirWatcher {
+  private var stream: FSEventStreamRef?
+  private let onChange: ([String]) -> Void
+
+  init?(paths: [String], onChange: @escaping ([String]) -> Void) {
+    self.onChange = onChange
+    var context = FSEventStreamContext(
+      version: 0, info: nil, retain: nil, release: nil, copyDescription: nil)
+    context.info = Unmanaged.passUnretained(self).toOpaque()
+    let callback: FSEventStreamCallback = { _, info, count, eventPaths, _, _ in
+      guard let info else { return }
+      let watcher = Unmanaged<StatusDirWatcher>.fromOpaque(info).takeUnretainedValue()
+      let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] ?? []
+      watcher.onChange(Array(paths.prefix(count)))
+    }
+    let flags = FSEventStreamCreateFlags(
+      kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer
+        | kFSEventStreamCreateFlagUseCFTypes)
+    guard
+      let stream = FSEventStreamCreate(
+        nil, callback, &context, paths as CFArray,
+        FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.1, flags)
+    else { return nil }
+    self.stream = stream
+    FSEventStreamSetDispatchQueue(stream, DispatchQueue.main)
+    FSEventStreamStart(stream)
+  }
+
+  deinit {
+    guard let stream else { return }
+    FSEventStreamStop(stream)
+    FSEventStreamInvalidate(stream)
+    FSEventStreamRelease(stream)
   }
 }

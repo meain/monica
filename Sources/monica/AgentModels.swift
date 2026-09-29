@@ -111,7 +111,7 @@ struct AgentSession: Identifiable, Equatable {
     return status.glyph
   }
 
-  /// Used by `AgentScanner.scan()`'s `.statusPriority` `SortMode` — higher
+  /// Used by the scanner's `.statusPriority` `SortMode` — higher
   /// sorts first. Stale/quiet always sink below every real status
   /// (regardless of what `status` itself says, same as `displayGlyph`),
   /// since they're more likely a dead/uncertain session than one actually
@@ -127,7 +127,7 @@ struct AgentSession: Identifiable, Equatable {
     }
   }
 
-  /// Used by `AgentScanner.scan()`'s `.needsAttention` `SortMode`. Unlike
+  /// Used by the scanner's `.needsAttention` `SortMode`. Unlike
   /// `sortPriorityRank` (which mirrors `AgentStatus`'s own working > idle
   /// priority), this puts `idle` on top — an agent that's finished its turn
   /// and is awaiting you is what most needs your attention, more than one

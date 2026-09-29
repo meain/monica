@@ -15,8 +15,10 @@ enum Switcher {
   /// session's own recent activity rather than a durable history.
   private static var lastActivatedAt: [String: Date] = [:]
 
-  static func lastActivated(_ paneId: String) -> Date? {
-    lastActivatedAt[paneId]
+  /// Copy for `AgentScanner`'s background scan — taken on main, since the
+  /// dictionary itself isn't safe to read from another thread.
+  static func lastActivatedSnapshot() -> [String: Date] {
+    lastActivatedAt
   }
 
   static func activate(_ session: AgentSession, targetApp: String) {

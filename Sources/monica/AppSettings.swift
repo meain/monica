@@ -1,7 +1,7 @@
 import Carbon.HIToolbox
 import Foundation
 
-/// How `AgentScanner.scan()` orders `sessions` — read fresh on every scan, so
+/// How the scanner orders `sessions` — read fresh on every scan, so
 /// changing it in Settings takes effect on the next scan tick (or
 /// immediately on next popover open, which scans synchronously). Purely an
 /// initial-order concern: `AgentPickerModel.refreshData`'s "keep existing

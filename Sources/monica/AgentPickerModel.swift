@@ -233,13 +233,36 @@ final class AgentPickerModel: ObservableObject {
     notifyIfVisibleCountChanged()
   }
 
+  /// Bumped per `updatePreview` call so a slow read for a row the user has
+  /// already arrowed past can't overwrite the current row's preview.
+  private var previewToken = 0
+  private static let previewQueue = DispatchQueue(
+    label: "com.meain.monica.preview", qos: .userInitiated)
+
+  /// Reads the transcript (a 200KB tail + per-line JSON parse) off the main
+  /// thread — this runs on every selection change and every 1s refresh
+  /// while the popover is open. The previous preview stays up until the new
+  /// one lands.
   private func updatePreview() {
     let list = filteredSessions
+    previewToken += 1
     guard list.indices.contains(selection) else {
       previewDetails = TranscriptDetails()
       return
     }
-    previewDetails = TranscriptPreview.details(for: list[selection])
+    let session = list[selection]
+    let token = previewToken
+    Self.previewQueue.async { [weak self] in
+      let details = TranscriptPreview.details(for: session)
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated {
+          guard let self, self.previewToken == token, self.previewDetails != details else {
+            return
+          }
+          self.previewDetails = details
+        }
+      }
+    }
   }
 
   private func commit() {
