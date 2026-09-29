@@ -48,12 +48,33 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
   /// Asks for permission — called when the Settings toggle is switched on,
   /// not at launch, so the one-shot system prompt appears in response to
   /// something the user just did.
-  static func requestAuthorization() {
+  static func requestAuthorization(then completion: (@MainActor (Bool) -> Void)? = nil) {
     guard hasBundle else { return }
     UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) {
       granted, _ in
-      DispatchQueue.main.async { AppSettings.shared.notificationsDenied = !granted }
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated {
+          AppSettings.shared.notificationsDenied = !granted
+          completion?(granted)
+        }
+      }
     }
+  }
+
+  /// Settings' "Send test" button — goes through the same permission check
+  /// and delivery path as a real notification, so it confirms the whole
+  /// chain (permission, banner style, Focus mode) rather than just the UI.
+  static func sendTest() {
+    let send = {
+      deliver(
+        title: "Monica", body: "Test notification — this is how an agent finishing will look.",
+        identifier: "monica.test", paneId: nil)
+    }
+    guard hasBundle else {
+      send()
+      return
+    }
+    requestAuthorization { granted in if granted { send() } }
   }
 
   private static func key(_ session: AgentSession) -> String {
@@ -120,11 +141,17 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
         body =
           Self.snippet(TranscriptPreview.details(for: session).text) ?? "Finished — awaiting you"
       }
-      await MainActor.run { Self.deliver(session, title: title, body: body) }
+      // Same identifier per pane + pid, so a newer notification replaces an
+      // older one for the same agent instead of stacking.
+      await MainActor.run {
+        Self.deliver(
+          title: title, body: body, identifier: Self.key(session), paneId: session.paneId)
+      }
     }
   }
 
-  private static func deliver(_ session: AgentSession, title: String, body: String) {
+  /// `paneId` (when set) is what a click switches to.
+  private static func deliver(title: String, body: String, identifier: String, paneId: String?) {
     guard hasBundle else {
       runFireAndForget(
         "/usr/bin/osascript",
@@ -139,11 +166,11 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
     content.title = title
     content.body = body
     content.sound = .default
-    content.threadIdentifier = session.paneId
-    content.userInfo = ["paneId": session.paneId]
-    // Same identifier per pane + pid, so a newer notification replaces an
-    // older one for the same agent instead of stacking.
-    let request = UNNotificationRequest(identifier: key(session), content: content, trigger: nil)
+    if let paneId {
+      content.threadIdentifier = paneId
+      content.userInfo = ["paneId": paneId]
+    }
+    let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
     UNUserNotificationCenter.current().add(request)
   }
 

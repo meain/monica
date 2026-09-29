@@ -310,10 +310,19 @@ struct SettingsView: View {
         }
         // Kept in this section rather than its own: Settings is already
         // sized to just fit a laptop screen (see the frame note below).
-        Toggle("Notify when an agent finishes or needs you", isOn: $settings.notificationsEnabled)
+        // Test button shares the toggle's row rather than adding one — see
+        // the height note above.
+        HStack {
+          Toggle(
+            "Notify when an agent finishes or needs you", isOn: $settings.notificationsEnabled
+          )
           .onChange(of: settings.notificationsEnabled) { _, enabled in
             if enabled { AgentNotifier.requestAuthorization() }
           }
+          Button("Test") { AgentNotifier.sendTest() }
+            .disabled(!settings.notificationsEnabled)
+            .help("Send a test notification")
+        }
         if settings.notificationsEnabled && settings.notificationsDenied {
           Label {
             Text("Notifications are turned off for Monica in System Settings → Notifications.")
