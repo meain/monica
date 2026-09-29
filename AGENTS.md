@@ -173,6 +173,10 @@ that fails for SwiftUI content, not input delivery.
   different bundle id (e.g. `com.meain.monica.test`, with
   `defaults write com.meain.monica.test monica.notificationsEnabled -bool true`) and run it
   from `~/Applications`. An unbundled `swift run` binary falls back to `osascript`.
+  The bundle also needs a real bundle signature (`codesign --force --sign - monica.app`,
+  done in `build-app.sh`): the linker's automatic ad-hoc signature covers only the binary
+  (identifier `monica`, Info.plist unbound), and with just that Monica never appears in
+  System Settings → Notifications and no prompt is shown.
 - **Status changes arrive via FSEvents, not just the poll timer.** `AgentScanner` does a
   status-only refresh on any status-file event for a known pid and a full rescan for an
   unknown/removed one. When debugging "status didn't update", check whether the event

@@ -47,6 +47,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# Sign the whole bundle (ad-hoc). The linker only signs the bare binary,
+# under identifier "monica" with the Info.plist unbound — macOS then never
+# registers the app for notifications (no entry in System Settings →
+# Notifications, authorization silently fails). A bundle signature carries
+# the real bundle id.
+codesign --force --sign - "$APP"
+
 echo "Built $APP"
 echo "Run it:   open $APP"
 echo "Install:  make link   (symlinks into /Applications)"
