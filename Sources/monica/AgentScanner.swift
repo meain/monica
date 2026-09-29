@@ -336,9 +336,11 @@ private enum ScanEngine {
     return output.split(separator: "\n").compactMap { line -> RawPane? in
       let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
       guard fields.count == 9, let pid = Int32(fields[5]),
-        let windowIndex = Int(fields[6]), let paneIndex = Int(fields[7]),
-        let sessionLastAttached = Double(fields[8])
+        let windowIndex = Int(fields[6]), let paneIndex = Int(fields[7])
       else { return nil }
+      // Empty for a session that's never been attached (`tmux new -d`) —
+      // requiring it to parse used to drop every agent in such a session.
+      let sessionLastAttached = Double(fields[8]) ?? 0
       return RawPane(
         paneId: fields[0], windowId: fields[1], session: fields[2],
         windowName: fields[3], panePath: fields[4], panePid: pid,
