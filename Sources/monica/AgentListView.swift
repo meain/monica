@@ -10,6 +10,8 @@ enum StatusStyle {
     switch status {
     case .working: return .green
     case .idle: return .secondary
+    // Orange, not yellow — yellow washes out against the light menu bar.
+    case .waiting: return .orange
     }
   }
 
@@ -31,10 +33,11 @@ enum StatusStyle {
 }
 
 /// The row's leading status indicator: a filled dot with a soft glow for
-/// working (so it reads as "live" at a glance), a hollow ring for idle, a
-/// filled gray dot once quiet (15m-3h since the last status update), and a
-/// dashed ring for stale — the same shape language as the menu bar glyphs
-/// (▶ ○ ● ◌) without mixing text glyphs into the rows.
+/// working (so it reads as "live" at a glance), a filled orange diamond for
+/// waiting (blocked on you), a hollow ring for idle, a filled gray dot once
+/// quiet (15m-3h since the last status update), and a dashed ring for stale
+/// — the same shape language as the menu bar glyphs (▶ ◆ ○ ● ◌) without
+/// mixing text glyphs into the rows.
 struct StatusIndicator: View {
   let status: AgentStatus
   let isStale: Bool
@@ -61,6 +64,11 @@ struct StatusIndicator: View {
         case .idle:
           Circle()
             .strokeBorder(color, lineWidth: 1.5)
+        case .waiting:
+          Rectangle()
+            .fill(color)
+            .rotationEffect(.degrees(45))
+            .scaleEffect(0.8)
         }
       }
     }
@@ -107,10 +115,19 @@ struct AgentRowView: View {
       Text(session.displayName)
         .font(.system(size: 13, weight: .semibold))
         .lineLimit(1)
-      Text("\(session.session) · \(session.windowName)")
-        .font(.system(size: 11))
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
+      // A blocked agent's reason replaces session · window — the reason is
+      // the thing you need to know, and the tooltip still carries both.
+      if session.status == .waiting {
+        Text("waiting · \(session.waitingFor ?? "blocked")")
+          .font(.system(size: 11))
+          .foregroundStyle(StatusStyle.color(for: .waiting, isStale: false, isQuiet: false))
+          .lineLimit(1)
+      } else {
+        Text("\(session.session) · \(session.windowName)")
+          .font(.system(size: 11))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+      }
       Spacer(minLength: 8)
       AgentBadge(agentName: session.agentName)
       Text(session.lastUpdatedDisplay)

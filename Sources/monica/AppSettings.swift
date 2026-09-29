@@ -47,7 +47,8 @@ enum SortMode: String, CaseIterable, Identifiable {
       return "Whichever agent posted a status update most recently."
     case .statusPriority:
       return
-        "Working agents first, then idle. Quiet/stale agents always sink to the bottom."
+        "Waiting agents first, then working, then idle. Quiet/stale agents always sink to the "
+        + "bottom."
     case .stalestFirst:
       return "The agent you haven't checked on in the longest — the inverse of Recency."
     case .alphabeticalProject:
@@ -62,8 +63,9 @@ enum SortMode: String, CaseIterable, Identifiable {
         + "order you last attached to them."
     case .needsAttention:
       return
-        "Idle agents first — the ones finished and awaiting you, longest-idle first (most "
-        + "overdue for a response) — then working agents. Quiet/stale sink to the bottom."
+        "Agents awaiting you first — blocked on a prompt, then finished — longest-waiting "
+        + "first (most overdue for a response), then working agents. Quiet/stale sink to the "
+        + "bottom."
     case .yourActivity:
       return
         "Whichever agent you personally switched to most recently, regardless of its own activity."

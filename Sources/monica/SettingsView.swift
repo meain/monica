@@ -102,6 +102,9 @@ struct SettingsView: View {
   private var workingCount: Int {
     scanner.sessions.filter { $0.status == .working && !$0.isStale && !$0.isQuiet }.count
   }
+  private var waitingCount: Int {
+    scanner.sessions.filter { $0.status == .waiting }.count
+  }
   private var idleCount: Int {
     scanner.sessions.filter { $0.status == .idle && !$0.isStale && !$0.isQuiet }.count
   }
@@ -188,6 +191,9 @@ struct SettingsView: View {
         LegendRow(
           glyph: "▶", color: .green, name: "Working", detail: "Running a task right now",
           count: workingCount)
+        LegendRow(
+          glyph: "◆", color: .orange, name: "Waiting",
+          detail: "Blocked on a prompt or dialog — needs you (claude only)", count: waitingCount)
         LegendRow(
           glyph: "○", color: .secondary, name: "Idle",
           detail: "Finished its turn — awaiting you", count: idleCount)
@@ -284,11 +290,11 @@ struct SettingsView: View {
           keyCode: $settings.jumpHotKeyCode, modifiers: $settings.jumpHotKeyModifiers,
           onChange: onJumpHotKeyChanged)
       } header: {
-        Text("Jump to next idle agent")
+        Text("Jump to next waiting/idle agent")
       } footer: {
         Text(
-          "Switches straight to the next idle agent (finished and awaiting you), cycling on "
-            + "repeated presses — no popover needed."
+          "Switches straight to the next agent awaiting you — blocked on a prompt first, then "
+            + "finished ones — cycling on repeated presses, no popover needed."
         )
         .font(.caption)
         .foregroundColor(.secondary)

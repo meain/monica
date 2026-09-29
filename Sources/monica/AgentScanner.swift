@@ -189,7 +189,7 @@ private enum ScanEngine {
     }
 
     var result = found.map { agent in
-      let (status, project, lastUpdated, sessionId, agentSessionName) = lookupStatus(
+      let info = lookupStatus(
         pid: agent.pid, agentName: agent.name, fallbackPath: agent.pane.panePath)
       return AgentSession(
         paneId: agent.pane.paneId,
@@ -199,12 +199,13 @@ private enum ScanEngine {
         panePath: agent.pane.panePath,
         agentPid: agent.pid,
         agentName: agent.name,
-        status: status,
-        project: project,
-        lastUpdated: lastUpdated,
-        sessionId: sessionId,
+        status: info.status,
+        project: info.project,
+        lastUpdated: info.lastUpdated,
+        sessionId: info.sessionId,
         customName: SessionNameStore.name(for: agent.pid),
-        agentSessionName: agentSessionName
+        agentSessionName: info.agentSessionName,
+        waitingFor: info.waitingFor
       )
     }
     let paneInfoByPaneId = Dictionary(
@@ -291,10 +292,10 @@ private enum ScanEngine {
         if $0.needsAttentionRank != $1.needsAttentionRank {
           return $0.needsAttentionRank > $1.needsAttentionRank
         }
-        // Idle bucket (rank 1, the top bucket): longest-idle first — the
+        // Waiting/idle buckets (the top two): longest-waiting first — the
         // agent that's been awaiting you the longest. Every other bucket
         // falls back to plain recency.
-        if $0.needsAttentionRank == 1 { return olderFirst($0, $1) }
+        if $0.isAwaitingUser { return olderFirst($0, $1) }
         return newerFirst($0, $1)
       }
     case .yourActivity:
@@ -397,7 +398,19 @@ private enum ScanEngine {
 
   // MARK: - status lookup
 
-  /// Returns `(status, project, lastUpdated, sessionId, agentSessionName)`.
+  struct StatusInfo {
+    var status: AgentStatus
+    var project: String
+    var lastUpdated: Date?
+    var sessionId: String?
+    var agentSessionName: String?
+    var waitingFor: String?
+
+    static func missing(fallbackPath: String) -> StatusInfo {
+      StatusInfo(status: .idle, project: (fallbackPath as NSString).lastPathComponent)
+    }
+  }
+
   ///
   /// `claude` reads everything from `~/.claude/sessions/<pid>.json` — Claude
   /// Code's own live process registry, which is fresher and more reliable
@@ -411,9 +424,9 @@ private enum ScanEngine {
   /// timestamp is a meaningful "hasn't updated in a while" signal, not
   /// stale/wrong data. `AgentSession.isQuiet`/`isStale` decide how that's
   /// drawn, at the display layer, not here.
-  private static func lookupStatus(pid: Int32, agentName: String, fallbackPath: String) -> (
-    AgentStatus, String, Date?, String?, String?
-  ) {
+  private static func lookupStatus(pid: Int32, agentName: String, fallbackPath: String)
+    -> StatusInfo
+  {
     if agentName == "claude" {
       return lookupClaudeStatus(pid: pid, fallbackPath: fallbackPath)
     }
@@ -423,23 +436,28 @@ private enum ScanEngine {
       let parsed = try? JSONDecoder().decode(AIStatusFile.self, from: data),
       let ts = parsed.timestamp
     else {
-      return (.idle, (fallbackPath as NSString).lastPathComponent, nil, nil, nil)
+      return .missing(fallbackPath: fallbackPath)
     }
 
-    // A missing/unknown status word (including the old "waiting", which is no
-    // longer a state) collapses to `.idle`; only "working" maps to `.working`.
-    let status = AgentStatus(rawValue: parsed.status ?? "idle") ?? .idle
+    // Only "working" maps to `.working`; everything else collapses to
+    // `.idle` — including aistatus's "waiting", which comes from a hook
+    // that isn't a reliable "blocked" signal (unlike Claude's registry).
+    let status: AgentStatus = parsed.status == "working" ? .working : .idle
     let project = parsed.project ?? (fallbackPath as NSString).lastPathComponent
-    return (status, project, Date(timeIntervalSince1970: ts), parsed.sessionId, nil)
+    return StatusInfo(
+      status: status, project: project, lastUpdated: Date(timeIntervalSince1970: ts),
+      sessionId: parsed.sessionId)
   }
 
   /// Claude Code maintains `~/.claude/sessions/<pid>.json` per live process
   /// (pruned when the process exits — confirmed against real files on this
-  /// machine: only the currently-running pids exist). Observed `status` values
-  /// are `busy` (running a task), `waiting` (blocked mid-task on a dialog /
-  /// permission prompt, with a `waitingFor` detail), and `idle` (finished its
-  /// turn, at the prompt) — only `busy` maps to `.working`; `waiting` and
-  /// `idle` both map to `.idle` (see `lookupClaudeStatus`).
+  /// machine: only the currently-running pids exist). Claude Code (2.1.284)
+  /// validates `status` as one of `busy` (running a task), `shell`, `idle`
+  /// (finished its turn, at the prompt), and `waiting` (blocked mid-task on
+  /// a permission prompt/dialog/elicitation). `waitingFor` is set only
+  /// alongside `waiting` — reasons seen in the binary: "input needed",
+  /// "dialog open", "sandbox request", "worker request", "goal proposal".
+  /// `busy` → `.working`, `waiting` → `.waiting`, anything else → `.idle`.
   /// `updatedAt`/`statusUpdatedAt`
   /// are epoch *milliseconds*. `name` is the session's title, but
   /// `nameSource: "derived"` marks an auto-generated placeholder (just the
@@ -455,22 +473,23 @@ private enum ScanEngine {
     var statusUpdatedAt: Double?
     var name: String?
     var nameSource: String?
+    var waitingFor: String?
   }
 
-  private static func lookupClaudeStatus(pid: Int32, fallbackPath: String) -> (
-    AgentStatus, String, Date?, String?, String?
-  ) {
+  private static func lookupClaudeStatus(pid: Int32, fallbackPath: String) -> StatusInfo {
     let file = URL(fileURLWithPath: claudeSessionsDir).appendingPathComponent("\(pid).json")
     guard let data = try? Data(contentsOf: file),
       let parsed = try? JSONDecoder().decode(ClaudeSessionFile.self, from: data)
     else {
-      return (.idle, (fallbackPath as NSString).lastPathComponent, nil, nil, nil)
+      return .missing(fallbackPath: fallbackPath)
     }
 
-    // Only "busy" (actively running a task) is `.working`; everything else —
-    // "idle", and "waiting" (blocked on a dialog/permission prompt, which we
-    // treat as idle rather than as its own state) — is `.idle`.
-    let status: AgentStatus = parsed.status == "busy" ? .working : .idle
+    let status: AgentStatus
+    switch parsed.status {
+    case "busy": status = .working
+    case "waiting": status = .waiting
+    default: status = .idle
+    }
     let project =
       (parsed.cwd as NSString?)?.lastPathComponent
       ?? (fallbackPath as NSString).lastPathComponent
@@ -484,7 +503,10 @@ private enum ScanEngine {
       }
       return name
     }()
-    return (status, project, lastUpdated, parsed.sessionId, agentSessionName)
+    return StatusInfo(
+      status: status, project: project, lastUpdated: lastUpdated, sessionId: parsed.sessionId,
+      agentSessionName: agentSessionName,
+      waitingFor: status == .waiting ? parsed.waitingFor : nil)
   }
 }
 

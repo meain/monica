@@ -231,10 +231,17 @@ final class MenuBarController {
         if index > 0 {
           title.append(NSAttributedString(string: " ", attributes: [.font: font]))
         }
-        let color: NSColor =
-          session.isStale || session.isQuiet
-          ? .secondaryLabelColor
-          : (session.status == .working ? .systemGreen : .secondaryLabelColor)
+        // `.waiting` never goes quiet/stale (see `AgentSession.isStale`).
+        let color: NSColor
+        if session.isStale || session.isQuiet {
+          color = .secondaryLabelColor
+        } else {
+          switch session.status {
+          case .working: color = .systemGreen
+          case .waiting: color = .systemOrange
+          case .idle: color = .secondaryLabelColor
+          }
+        }
         title.append(
           NSAttributedString(
             string: session.displayGlyph, attributes: [.font: font, .foregroundColor: color]))

@@ -403,7 +403,7 @@ private struct ShortcutsHelpSection: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 6) {
           ShortcutRow(title: "Open the picker", keys: [hotKeyLabel])
-          ShortcutRow(title: "Jump to next idle", keys: [jumpHotKeyLabel])
+          ShortcutRow(title: "Jump to next waiting/idle", keys: [jumpHotKeyLabel])
           ShortcutRow(title: "Filter and move", keys: ["type", "↑", "↓"])
           ShortcutRow(title: "Switch to selected agent", keys: ["↩"])
           ShortcutRow(title: "Send a message without switching", keys: ["⌘↩"])
@@ -452,6 +452,10 @@ private struct FooterSection: View {
     var result: [StatusChip] = []
     let working = sessions.filter { $0.status == .working && !$0.isStale && !$0.isQuiet }.count
     let idle = sessions.filter { $0.status == .idle && !$0.isStale && !$0.isQuiet }.count
+    let waiting = sessions.filter { $0.status == .waiting }.count
+    if waiting > 0 {
+      result.append(StatusChip(label: "\(waiting) waiting", filterWord: "waiting"))
+    }
     if working > 0 {
       result.append(StatusChip(label: "\(working) working", filterWord: "working"))
     }

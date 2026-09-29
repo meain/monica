@@ -73,11 +73,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     AppSettings.shared.hotKeyRegistrationFailed = !succeeded
   }
 
-  /// Bypasses the popover entirely: cycles through fresh `.idle` agents
-  /// (finished their turn and awaiting you; stale/quiet ones excluded) in the
-  /// scanner's most-recently-updated-first order on each press, wrapping back
-  /// to the first once the end is reached or the previously-jumped-to pane is
-  /// no longer idle.
+  /// Bypasses the popover entirely: cycles through agents awaiting you —
+  /// `.waiting` (blocked on a prompt) first, then fresh `.idle` (finished
+  /// their turn; stale/quiet excluded), each group in the scanner's order —
+  /// on each press, wrapping back to the first once the end is reached or
+  /// the previously-jumped-to pane is no longer awaiting you.
   @MainActor
   private func registerJumpHotKey() {
     guard let jumpHotKeyManager else { return }
@@ -93,15 +93,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   @MainActor
   private func jumpToNextIdle() {
     guard let scanner else { return }
-    let idle = scanner.sessions.filter { $0.status == .idle && !$0.isStale && !$0.isQuiet }
-    guard !idle.isEmpty else { return }
+    let awaiting = scanner.sessions.filter(\.isAwaitingUser)
+    let targets =
+      awaiting.filter { $0.status == .waiting } + awaiting.filter { $0.status != .waiting }
+    guard !targets.isEmpty else { return }
     let nextIndex: Int
-    if let lastJumpedPaneId, let idx = idle.firstIndex(where: { $0.paneId == lastJumpedPaneId }) {
-      nextIndex = (idx + 1) % idle.count
+    if let lastJumpedPaneId,
+      let idx = targets.firstIndex(where: { $0.paneId == lastJumpedPaneId })
+    {
+      nextIndex = (idx + 1) % targets.count
     } else {
       nextIndex = 0
     }
-    let target = idle[nextIndex]
+    let target = targets[nextIndex]
     lastJumpedPaneId = target.paneId
     Switcher.activate(target, targetApp: AppSettings.shared.targetApp)
   }

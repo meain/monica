@@ -1,21 +1,22 @@
 import Foundation
 
-/// Only two live states: `working` (Claude Code's `busy`) and `idle`
-/// (everything else — the agent finished its turn and is awaiting you).
-/// There is deliberately no `waiting` — the sessions-file status monica now
-/// reads (see `AgentScanner.lookupStatus`) only distinguishes busy/idle, so a
-/// separate "blocked on you" state can't be told apart reliably; it collapses
-/// into `idle`. Staleness (see `AgentSession.isQuiet`/`isStale`) is a separate
-/// time-based overlay, not a status value.
+/// Three live states: `working` (Claude Code's `busy`), `waiting` (blocked
+/// mid-task on a permission prompt/dialog — Claude Code's own `waiting`,
+/// with a `waitingFor` reason; claude only, pi has no reliable signal for
+/// it), and `idle` (everything else — finished its turn, awaiting you).
+/// Staleness (see `AgentSession.isQuiet`/`isStale`) is a separate time-based
+/// overlay, not a status value — and never applies to `waiting`.
 enum AgentStatus: String, Comparable {
   case idle
   case working
+  case waiting
 
-  /// working > idle.
+  /// waiting > working > idle.
   private var priority: Int {
     switch self {
     case .idle: return 0
     case .working: return 1
+    case .waiting: return 2
     }
   }
 
@@ -28,6 +29,9 @@ enum AgentStatus: String, Comparable {
     switch self {
     case .working: return "▶"
     case .idle: return "○"
+    // Not ▲ — too easily mistaken for ▶ at menu bar size. Covered by Menlo
+    // (checked with CTFontCreateForString, see AGENTS.md's glyph gotcha).
+    case .waiting: return "◆"
     }
   }
 }
@@ -56,6 +60,11 @@ struct AgentSession: Identifiable, Equatable {
   /// only Claude Code, read from `~/.claude/sessions/<pid>.json` on each scan
   /// (see `AgentScanner.lookupClaudeSessionName`). Always nil for pi.
   var agentSessionName: String?
+  /// Why a `.waiting` agent is blocked, verbatim from Claude Code's registry
+  /// (e.g. "input needed", "dialog open", "sandbox request"). Internal to
+  /// Claude Code and may change between versions — display only, never
+  /// branch on it. Nil for every other status.
+  var waitingFor: String? = nil
 
   var id: String { paneId }
 
@@ -87,7 +96,13 @@ struct AgentSession: Identifiable, Equatable {
   /// untrustworthy as a stale one. Doesn't change `status` itself, just how
   /// it's drawn (see `displayGlyph`) — the underlying pid is still confirmed
   /// live by the pid-tree scan either way.
+  ///
+  /// Never true for `.waiting`: the registry only writes on a status change,
+  /// so an agent left blocked on a prompt for hours has an old timestamp but
+  /// is exactly as blocked as it was — decaying it to stale would hide the
+  /// one agent that most needs you.
   var isStale: Bool {
+    if status == .waiting { return false }
     guard let lastUpdated else { return true }
     return Date().timeIntervalSince(lastUpdated) > AgentSession.staleThreshold
   }
@@ -95,8 +110,10 @@ struct AgentSession: Identifiable, Equatable {
   /// True for the 15m-3h window between a normal update and going fully
   /// `isStale` — the status file hasn't been touched in a while but isn't
   /// old enough yet to distrust entirely. Doesn't change `status` itself,
-  /// just how it's drawn (see `displayGlyph`).
+  /// just how it's drawn (see `displayGlyph`). Never true for `.waiting`,
+  /// same reason as `isStale`.
   var isQuiet: Bool {
+    if status == .waiting { return false }
     guard let lastUpdated else { return false }
     let elapsed = Date().timeIntervalSince(lastUpdated)
     return elapsed > AgentSession.quietThreshold && elapsed <= AgentSession.staleThreshold
@@ -116,29 +133,35 @@ struct AgentSession: Identifiable, Equatable {
   /// (regardless of what `status` itself says, same as `displayGlyph`),
   /// since they're more likely a dead/uncertain session than one actually
   /// wanting attention; within "real" statuses this reuses `AgentStatus`'s
-  /// own `working > idle` priority. Sorted descending, this yields
-  /// working → idle → quiet → stale.
+  /// own `waiting > working > idle` priority. Sorted descending, this yields
+  /// waiting → working → idle → quiet → stale.
   var sortPriorityRank: Int {
     if isStale { return -2 }
     if isQuiet { return -1 }
     switch status {
     case .idle: return 0
     case .working: return 1
+    case .waiting: return 2
     }
   }
 
   /// Used by the scanner's `.needsAttention` `SortMode`. Unlike
   /// `sortPriorityRank` (which mirrors `AgentStatus`'s own working > idle
-  /// priority), this puts `idle` on top — an agent that's finished its turn
-  /// and is awaiting you is what most needs your attention, more than one
-  /// still churning away unattended. Stale/quiet still override to the
-  /// bottom, same reasoning as `sortPriorityRank`/`displayGlyph`.
+  /// priority), this puts agents awaiting you on top — blocked on a prompt
+  /// first (it can't make progress at all until you act), then finished its
+  /// turn — ahead of ones still churning away unattended. Stale/quiet still
+  /// override to the bottom, same reasoning as `sortPriorityRank`/`displayGlyph`.
   var needsAttentionRank: Int {
     if isStale { return -2 }
     if isQuiet { return -1 }
     switch status {
     case .working: return 0
     case .idle: return 1
+    case .waiting: return 2
     }
   }
+
+  /// Blocked on you or finished and awaiting you — what the jump hotkey
+  /// cycles through and what notifications fire for.
+  var isAwaitingUser: Bool { needsAttentionRank >= 1 }
 }
