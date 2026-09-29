@@ -1,10 +1,17 @@
-// Renders Monica's app icon: the menu bar status strip (▶ working,
-// ◆ waiting, ○ idle — same shapes and colors as the popover rows) on the
-// blue→purple gradient the Settings header uses.
+// Renders Monica's app icon: three list rows on a soft lavender-gray tile,
+// each led by a status dot (green working, amber waiting, gray idle) — the
+// popover's agent list in miniature.
 //
 // Regenerate with `make icon` (writes icon/AppIcon.icns, which build-app.sh
 // copies into the bundle).
 import AppKit
+
+func rgb(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
+  NSColor(
+    srgbRed: CGFloat((hex >> 16) & 0xff) / 255, green: CGFloat((hex >> 8) & 0xff) / 255,
+    blue: CGFloat(hex & 0xff) / 255, alpha: alpha
+  ).cgColor
+}
 
 func render(size: CGFloat) -> Data {
   let px = Int(size)
@@ -22,11 +29,9 @@ func render(size: CGFloat) -> Data {
   let tile = CGRect(x: 100, y: 100, width: 824, height: 824)
   let tilePath = CGPath(roundedRect: tile, cornerWidth: 185, cornerHeight: 185, transform: nil)
   ctx.saveGState()
-  ctx.setShadow(
-    offset: CGSize(width: 0, height: -12), blur: 28,
-    color: NSColor.black.withAlphaComponent(0.35).cgColor)
+  ctx.setShadow(offset: CGSize(width: 0, height: -10), blur: 24, color: rgb(0x000000, 0.28))
   ctx.addPath(tilePath)
-  ctx.setFillColor(NSColor.black.cgColor)
+  ctx.setFillColor(rgb(0xdcdae6))
   ctx.fillPath()
   ctx.restoreGState()
 
@@ -35,62 +40,37 @@ func render(size: CGFloat) -> Data {
   ctx.clip()
   let gradient = CGGradient(
     colorsSpace: CGColorSpaceCreateDeviceRGB(),
-    colors: [
-      NSColor(srgbRed: 0.24, green: 0.45, blue: 0.98, alpha: 1).cgColor,
-      NSColor(srgbRed: 0.55, green: 0.30, blue: 0.90, alpha: 1).cgColor,
-    ] as CFArray, locations: [0, 1])!
+    colors: [rgb(0xf4f3f8), rgb(0xdcdae6)] as CFArray, locations: nil)!
   ctx.drawLinearGradient(
-    gradient, start: CGPoint(x: tile.minX, y: tile.maxY), end: CGPoint(x: tile.maxX, y: tile.minY),
+    gradient, start: CGPoint(x: 512, y: tile.maxY), end: CGPoint(x: 512, y: tile.minY),
     options: [])
-  // Subtle top sheen, fading out toward the middle.
-  let sheen = CGGradient(
-    colorsSpace: CGColorSpaceCreateDeviceRGB(),
-    colors: [
-      NSColor.white.withAlphaComponent(0.14).cgColor, NSColor.white.withAlphaComponent(0).cgColor,
-    ] as CFArray, locations: [0, 1])!
-  ctx.drawLinearGradient(
-    sheen, start: CGPoint(x: 0, y: tile.maxY), end: CGPoint(x: 0, y: tile.midY), options: [])
   ctx.restoreGState()
 
-  // The "menu bar" strip.
-  let strip = CGRect(x: 170, y: 392, width: 684, height: 240)
-  ctx.addPath(CGPath(roundedRect: strip, cornerWidth: 120, cornerHeight: 120, transform: nil))
-  ctx.setFillColor(NSColor(srgbRed: 0.07, green: 0.08, blue: 0.13, alpha: 0.88).cgColor)
-  ctx.fillPath()
+  // Hairline edge so the light tile doesn't dissolve into light backgrounds.
+  ctx.addPath(
+    CGPath(
+      roundedRect: tile.insetBy(dx: 2, dy: 2), cornerWidth: 183, cornerHeight: 183,
+      transform: nil))
+  ctx.setStrokeColor(rgb(0x000000, 0.06))
+  ctx.setLineWidth(4)
+  ctx.strokePath()
 
-  let cy = strip.midY
-  let glyph: CGFloat = 132
-  let centers: [CGFloat] = [strip.minX + 142, strip.midX, strip.maxX - 142]
-
-  // ▶ working — green, with a soft glow like the popover's working dot.
-  ctx.saveGState()
-  let green = NSColor(srgbRed: 0.20, green: 0.84, blue: 0.40, alpha: 1).cgColor
-  ctx.setShadow(offset: .zero, blur: 30, color: green)
-  let x0 = centers[0]
-  ctx.move(to: CGPoint(x: x0 - glyph * 0.38, y: cy + glyph / 2))
-  ctx.addLine(to: CGPoint(x: x0 + glyph * 0.52, y: cy))
-  ctx.addLine(to: CGPoint(x: x0 - glyph * 0.38, y: cy - glyph / 2))
-  ctx.closePath()
-  ctx.setFillColor(green)
-  ctx.fillPath()
-  ctx.restoreGState()
-
-  // ◆ waiting — orange diamond.
-  let x1 = centers[1]
-  let d = glyph * 0.56
-  ctx.move(to: CGPoint(x: x1, y: cy + d))
-  ctx.addLine(to: CGPoint(x: x1 + d, y: cy))
-  ctx.addLine(to: CGPoint(x: x1, y: cy - d))
-  ctx.addLine(to: CGPoint(x: x1 - d, y: cy))
-  ctx.closePath()
-  ctx.setFillColor(NSColor(srgbRed: 1.0, green: 0.62, blue: 0.10, alpha: 1).cgColor)
-  ctx.fillPath()
-
-  // ○ idle — light gray ring.
-  let r = glyph * 0.44
-  ctx.setStrokeColor(NSColor(white: 0.78, alpha: 1).cgColor)
-  ctx.setLineWidth(22)
-  ctx.strokeEllipse(in: CGRect(x: centers[2] - r, y: cy - r, width: r * 2, height: r * 2))
+  // Rows: status dot + a text bar. The first (working) row reads strongest.
+  let rows: [(y: CGFloat, dot: CGColor, barWidth: CGFloat, barAlpha: CGFloat)] = [
+    (642, rgb(0x34d27a), 380, 0.75),
+    (512, rgb(0xf5a524), 300, 0.35),
+    (382, rgb(0x9a98a8), 380, 0.35),
+  ]
+  for row in rows {
+    ctx.setFillColor(row.dot)
+    ctx.fillEllipse(in: CGRect(x: 290 - 34, y: row.y - 34, width: 68, height: 68))
+    ctx.addPath(
+      CGPath(
+        roundedRect: CGRect(x: 360, y: row.y - 22, width: row.barWidth, height: 44),
+        cornerWidth: 22, cornerHeight: 22, transform: nil))
+    ctx.setFillColor(rgb(0x3b3a48, row.barAlpha))
+    ctx.fillPath()
+  }
 
   NSGraphicsContext.restoreGraphicsState()
   return rep.representation(using: .png, properties: [:])!
