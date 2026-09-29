@@ -486,7 +486,7 @@ private enum ScanEngine {
       return .missing(fallbackPath: fallbackPath)
     }
 
-    let status: AgentStatus
+    var status: AgentStatus
     switch parsed.status {
     case "busy": status = .working
     case "waiting": status = .waiting
@@ -495,10 +495,30 @@ private enum ScanEngine {
     let project =
       (parsed.cwd as NSString?)?.lastPathComponent
       ?? (fallbackPath as NSString).lastPathComponent
-    // Most-recent registry write is the best "last active" proxy — see the
-    // doc comment above; the two timestamps are usually equal but take the max.
-    let lastUpdated = [parsed.updatedAt, parsed.statusUpdatedAt].compactMap { $0 }.max()
+    // Most-recent registry write is the baseline "last active" proxy — see
+    // the doc comment above; the two timestamps are usually equal but take the max.
+    let registryUpdated = [parsed.updatedAt, parsed.statusUpdatedAt].compactMap { $0 }.max()
       .map { Date(timeIntervalSince1970: $0 / 1000) }
+    var lastUpdated = registryUpdated
+
+    // The registry only tracks the main turn, so subagents are invisible to
+    // it: a `busy` session waiting on long-running subagents stops getting
+    // registry writes (and decayed to quiet/stale), and a turn that launched
+    // background subagents and ended reads `idle` while they're still going.
+    // Their transcripts (`<projects>/<cwd>/<sessionId>/subagents/agent-*.jsonl`)
+    // are written on every step, so the newest mtime is the real activity signal.
+    if let sessionId = parsed.sessionId,
+      let subagentWrite = latestSubagentWrite(
+        sessionId: sessionId, cwd: parsed.cwd ?? fallbackPath)
+    {
+      if lastUpdated.map({ subagentWrite > $0 }) ?? true { lastUpdated = subagentWrite }
+      if status == .idle,
+        registryUpdated.map({ subagentWrite > $0 }) ?? true,
+        Date().timeIntervalSince(subagentWrite) < subagentActiveWindow
+      {
+        status = .working
+      }
+    }
     let agentSessionName: String? = {
       guard parsed.nameSource != "derived", let name = parsed.name, !name.isEmpty else {
         return nil
@@ -509,6 +529,27 @@ private enum ScanEngine {
       status: status, project: project, lastUpdated: lastUpdated, sessionId: parsed.sessionId,
       agentSessionName: agentSessionName,
       waitingFor: status == .waiting ? parsed.waitingFor : nil)
+  }
+
+  /// How recently a subagent must have written for an `idle` session to
+  /// count as still working. Generous, since a subagent sitting in a long
+  /// tool call (a test run, a build) doesn't write until it returns.
+  private static let subagentActiveWindow: TimeInterval = 120
+
+  private static func latestSubagentWrite(sessionId: String, cwd: String) -> Date? {
+    let dir = TranscriptPreview.claudeProjectsDir
+      .appendingPathComponent(TranscriptPreview.claudeEncode(cwd))
+      .appendingPathComponent(sessionId)
+      .appendingPathComponent("subagents")
+    guard
+      let files = try? FileManager.default.contentsOfDirectory(
+        at: dir, includingPropertiesForKeys: [.contentModificationDateKey])
+    else { return nil }
+    return files.lazy
+      .filter { $0.pathExtension == "jsonl" }
+      .compactMap { try? $0.resourceValues(forKeys: [.contentModificationDateKey]) }
+      .compactMap(\.contentModificationDate)
+      .max()
   }
 }
 

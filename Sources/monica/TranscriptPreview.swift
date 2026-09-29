@@ -53,7 +53,7 @@ struct TranscriptDetails: Equatable {
 /// a branching id/parentId tree (see https://pi.dev/docs/latest/session-format)
 /// and this deliberately ignores branches, just reading file order.
 enum TranscriptPreview {
-  private static let claudeProjectsDir = FileManager.default.homeDirectoryForCurrentUser
+  static let claudeProjectsDir = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent(".claude/projects")
   private static let piSessionsDir = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent(".pi/agent/sessions")
@@ -81,7 +81,7 @@ enum TranscriptPreview {
 
   // MARK: - Claude Code
 
-  private static func claudeEncode(_ path: String) -> String {
+  static func claudeEncode(_ path: String) -> String {
     String(
       path.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? Character($0) : "-" })
   }

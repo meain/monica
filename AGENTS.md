@@ -253,6 +253,14 @@ that fails for SwiftUI content, not input delivery.
   collision before assuming the registration code is broken. The hotkey is
   re-recordable live from Settings (`KeyRecorderView.swift`) — changing it calls back
   into `AppDelegate.registerHotKey()`, which re-registers with Carbon immediately.
+- **Claude's registry status ignores subagents.** It only tracks the main turn: a `busy`
+  session waiting on long subagents gets no registry writes (and used to decay to
+  quiet/stale), and a turn that launched background subagents then ended reads `idle`.
+  `lookupClaudeStatus` therefore also takes the newest mtime under
+  `~/.claude/projects/<cwd>/<sessionId>/subagents/*.jsonl` as `lastUpdated`, and
+  promotes `idle` → `.working` if a subagent wrote after the registry did and within the
+  last 120s. Subagent writes don't trigger FSEvents (only the status dirs are watched),
+  so this is picked up on the 2s poll.
 - **Status data is read-only.** monica never writes to `~/.claude/sessions/` (Claude
   Code's own process registry, the source for claude) or `~/.local/share/aistatus/`
   (the `pi` tmux-status extension in `~/.dotfiles`, the source for pi). If a claude's
