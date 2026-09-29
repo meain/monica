@@ -177,6 +177,13 @@ that fails for SwiftUI content, not input delivery.
   done in `build-app.sh`): the linker's automatic ad-hoc signature covers only the binary
   (identifier `monica`, Info.plist unbound), and with just that Monica never appears in
   System Settings → Notifications and no prompt is shown.
+- **Notification banners keep showing a stale app icon after an icon change**, even after
+  `lsregister -f`, restarting `NotificationCenter`/`usernoted`, and renaming the bundled
+  icon file. What actually fixed it: move the per-user icon caches aside
+  (`$(getconf DARWIN_USER_CACHE_DIR)/com.apple.iconservices` and
+  `…/com.apple.notificationcenterui`), then `killall iconservicesagent NotificationCenter
+  usernoted`. `build-app.sh` also names the bundled icon `AppIcon-<hash>.icns` so each icon
+  change is at least a new file as far as LaunchServices is concerned.
 - **Status changes arrive via FSEvents, not just the poll timer.** `AgentScanner` does a
   status-only refresh on any status-file event for a known pid and a full rescan for an
   unknown/removed one. When debugging "status didn't update", check whether the event

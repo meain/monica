@@ -23,10 +23,15 @@ BIN=".build/release/monica"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/monica"
-# Regenerate with `make icon`. Also what notification banners show.
-cp icon/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# Regenerate with `make icon`. Also what notification banners show. The
+# bundled name carries a content hash: macOS (Notification Center especially)
+# caches app icons by bundle + icon file name and ignores a changed file
+# under the same name — even across lsregister and restarting usernoted.
+ICON_NAME="AppIcon-$(shasum icon/AppIcon.icns | cut -c1-8)"
+cp icon/AppIcon.icns "$APP/Contents/Resources/$ICON_NAME.icns"
 
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+# Unquoted heredoc: expands ${ICON_NAME}.
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -35,7 +40,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleDisplayName</key>     <string>Monica</string>
     <key>CFBundleIdentifier</key>      <string>com.meain.monica</string>
     <key>CFBundleExecutable</key>      <string>monica</string>
-    <key>CFBundleIconFile</key>        <string>AppIcon</string>
+    <key>CFBundleIconFile</key>        <string>${ICON_NAME}</string>
     <key>CFBundlePackageType</key>     <string>APPL</string>
     <key>CFBundleShortVersionString</key> <string>1.0.1</string>
     <key>CFBundleVersion</key>         <string>1</string>
