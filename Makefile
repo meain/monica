@@ -16,7 +16,7 @@ ifdef MONICA_DEVELOPER_DIR
 export DEVELOPER_DIR := $(MONICA_DEVELOPER_DIR)
 endif
 
-.PHONY: build run release app install link unlink format lint clean help
+.PHONY: build run release app install link unlink icon format lint clean help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -33,6 +33,11 @@ release: ## Build an optimized release binary
 
 app: ## Build monica.app bundle
 	./build-app.sh
+
+icon: ## Regenerate icon/AppIcon.icns from icon/make-icon.swift
+	rm -rf /tmp/monica-AppIcon.iconset
+	swift icon/make-icon.swift /tmp/monica-AppIcon.iconset
+	iconutil -c icns /tmp/monica-AppIcon.iconset -o icon/AppIcon.icns
 
 install: app ## Copy monica.app into /Applications
 	rm -rf "$(APPS_DIR)/$(APP)"
