@@ -9,6 +9,13 @@ APPS_DIR := /Applications
 unexport SDKROOT
 unexport DEVELOPER_DIR
 
+# The devshell provides a filtered CommandLineTools mirror (see flake.nix)
+# that works around Swift 6.4's build system failing on a stale local SDK.
+# Unset outside the devshell (e.g. CI), where the plain system CLT is used.
+ifdef MONICA_DEVELOPER_DIR
+export DEVELOPER_DIR := $(MONICA_DEVELOPER_DIR)
+endif
+
 .PHONY: build run release app install link unlink format lint clean help
 
 help: ## Show this help

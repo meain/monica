@@ -156,12 +156,15 @@ that fails for SwiftUI content, not input delivery.
 
 ## Non-obvious gotchas
 
-- **Swift 6.4's default build system fails on this machine** with "Could not initialize
-  build system … Unknown error parsing property list" — it chokes on the broken
-  `/Library/Developer/CommandLineTools/SDKs/MacOSX15.5.sdk` (no `SDKSettings.plist`),
-  regardless of source. Native build system + an explicit SDK works:
-  `env -i HOME=$HOME PATH=/usr/bin:/bin:/usr/sbin:/sbin SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk /usr/bin/swift build --build-system native`
-  (the default 27.0 SDK with native fails on missing `SwiftUIMacros`).
+- **Build inside the devshell** (`nix develop` / direnv) — Swift 6.4's default build
+  system fails with "Could not initialize build system … Unknown error parsing property
+  list" when run against the plain system CLT on this machine: it enumerates every SDK
+  and chokes on the stale `/Library/Developer/CommandLineTools/SDKs/MacOSX15.5.sdk` stub
+  (no `SDKSettings.plist`). The flake builds a symlink mirror of CommandLineTools exposing
+  only `MacOSX26.5.sdk` and exports it as `MONICA_DEVELOPER_DIR`, which the Makefile and
+  `build-app.sh` use as `DEVELOPER_DIR`. The 27.0 SDK is deliberately excluded: its
+  SwiftUI needs a `SwiftUIMacros` plugin CLT doesn't ship. Bump `sdk` in `flake.nix`
+  when CLT updates. CI doesn't use nix and is unaffected.
 - **`UNUserNotificationCenter` refuses an app bundle run from `/tmp`** —
   `requestAuthorization` fails immediately with "Notifications are not allowed for this
   application" and no prompt appears. The same ad-hoc-signed bundle copied to

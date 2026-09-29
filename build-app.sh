@@ -9,6 +9,10 @@ cd "$(dirname "$0")"
 # the Makefile (which also unexports these, but this script can be run
 # directly too).
 unset SDKROOT DEVELOPER_DIR
+# Filtered CLT mirror from the devshell, if present — see flake.nix.
+if [ -n "${MONICA_DEVELOPER_DIR:-}" ]; then
+  export DEVELOPER_DIR="$MONICA_DEVELOPER_DIR"
+fi
 
 echo "Building release…"
 swift build -c release
