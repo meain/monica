@@ -308,8 +308,24 @@ struct SettingsView: View {
               .monospacedDigit()
           }
         }
+        // Kept in this section rather than its own: Settings is already
+        // sized to just fit a laptop screen (see the frame note below).
+        Toggle("Notify when an agent finishes or needs you", isOn: $settings.notificationsEnabled)
+          .onChange(of: settings.notificationsEnabled) { _, enabled in
+            if enabled { AgentNotifier.requestAuthorization() }
+          }
+        if settings.notificationsEnabled && settings.notificationsDenied {
+          Label {
+            Text("Notifications are turned off for Monica in System Settings → Notifications.")
+              .font(.system(size: 11))
+              .fixedSize(horizontal: false, vertical: true)
+          } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .foregroundStyle(.orange)
+          }
+        }
       } header: {
-        Text("Scanning")
+        Text("Background")
       }
     }
     .formStyle(.grouped)

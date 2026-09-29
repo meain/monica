@@ -50,6 +50,22 @@ awaiting you); pi's old aistatus `waiting` collapses into `idle`. The 15m "quiet
 "stale" time-based overlays are unchanged. The jump hotkey and "Needs attention" sort,
 both previously built around `waiting`, now target `idle` (the agent awaiting you).
 
+**v1.5 note:** three usability changes. **`waiting` is back, for claude only** — the
+v1.4 claim above was wrong: Claude Code (2.1.284) validates registry `status` as
+`busy | shell | idle | waiting`, and writes `waiting` plus a `waitingFor` reason
+("input needed", "dialog open", "sandbox request", …) whenever it's blocked on a
+permission prompt, dialog or elicitation. It renders as an orange `◆`, shows the reason in
+the row, never decays to quiet/stale (the registry only writes on change, so a long-blocked
+agent has an old timestamp), and sorts above everything in Status/Needs attention and the
+jump hotkey. pi stays two-state. **Scanning moved off the main thread** onto a background
+queue, with a timeout on every subprocess, and **FSEvents on the two status directories**
+trigger a status-only refresh (no tmux/`ps` spawn), so status changes show up within
+~100ms instead of up to a poll tick later — see `AgentScanner`'s doc comment. **monica now
+owns notifications** (opt-in, Settings → Background): working → idle (after a 3s settle)
+and → waiting, suppressed while you're viewing that pane, click switches to it — see
+`AgentNotifier`. If you turn it on, drop `notify-summary.sh`/`,make-noise` from the Claude
+`Stop` hook in dotfiles to avoid double notifications.
+
 ## Problem
 
 `,tmux-ai-agents` already does this well inside tmux (`M-'` → fzf popup → pick an agent
@@ -363,7 +379,4 @@ make link        # symlink monica.app into /Applications
 - Remote/SSH tmux visibility.
 - Generic heuristic status detection (pane-content diffing) for agents without hook
   support, à la dmux's `paneAttentionHeuristics.ts`.
-- monica owning desktop notifications (currently `notify-summary.sh`'s job); would
-  enable focus-aware suppression (don't notify if the right window is already
-  frontmost).
 - Launch-at-login toggle (currently manual — `open -a monica` or Login Items).

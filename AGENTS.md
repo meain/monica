@@ -156,6 +156,24 @@ that fails for SwiftUI content, not input delivery.
 
 ## Non-obvious gotchas
 
+- **Swift 6.4's default build system fails on this machine** with "Could not initialize
+  build system … Unknown error parsing property list" — it chokes on the broken
+  `/Library/Developer/CommandLineTools/SDKs/MacOSX15.5.sdk` (no `SDKSettings.plist`),
+  regardless of source. Native build system + an explicit SDK works:
+  `env -i HOME=$HOME PATH=/usr/bin:/bin:/usr/sbin:/sbin SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk /usr/bin/swift build --build-system native`
+  (the default 27.0 SDK with native fails on missing `SwiftUIMacros`).
+- **`UNUserNotificationCenter` refuses an app bundle run from `/tmp`** —
+  `requestAuthorization` fails immediately with "Notifications are not allowed for this
+  application" and no prompt appears. The same ad-hoc-signed bundle copied to
+  `~/Applications` (plus `lsregister -f`, launched via `open`) prompts and delivers fine.
+  To test notifications without touching the real app, bundle the debug binary under a
+  different bundle id (e.g. `com.meain.monica.test`, with
+  `defaults write com.meain.monica.test monica.notificationsEnabled -bool true`) and run it
+  from `~/Applications`. An unbundled `swift run` binary falls back to `osascript`.
+- **Status changes arrive via FSEvents, not just the poll timer.** `AgentScanner` does a
+  status-only refresh on any status-file event for a known pid and a full rescan for an
+  unknown/removed one. When debugging "status didn't update", check whether the event
+  fired before suspecting the poll interval.
 - **Images for README/docs.md are never committed to the repo** — they're uploaded via
   the `gh image` extension (`gh extension install drogers0/gh-image`; authenticates via
   your browser's `user_session` cookie, no PAT scopes) to GitHub's `user-attachments`

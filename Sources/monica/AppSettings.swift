@@ -90,6 +90,7 @@ final class AppSettings: ObservableObject {
     static let previewShowLastPrompt = "monica.previewShowLastPrompt"
     static let previewShowToolActivity = "monica.previewShowToolActivity"
     static let sortMode = "monica.sortMode"
+    static let notificationsEnabled = "monica.notificationsEnabled"
   }
 
   /// The app name passed to `open -a <targetApp>` when switching. Ghostty by
@@ -164,6 +165,19 @@ final class AppSettings: ObservableObject {
     didSet { UserDefaults.standard.set(sortMode.rawValue, forKey: Keys.sortMode) }
   }
 
+  /// Off by default: the Claude hooks in dotfiles may already notify on
+  /// Stop, and turning this on is what triggers the one-shot system
+  /// permission prompt (see `AgentNotifier.requestAuthorization`).
+  @Published var notificationsEnabled: Bool {
+    didSet {
+      UserDefaults.standard.set(notificationsEnabled, forKey: Keys.notificationsEnabled)
+    }
+  }
+
+  /// Not persisted — set from the authorization callback so Settings can
+  /// point at System Settings instead of leaving a silently dead toggle.
+  @Published var notificationsDenied: Bool = false
+
   private init() {
     let defaults = UserDefaults.standard
     targetApp = defaults.string(forKey: Keys.targetApp) ?? "Ghostty"
@@ -183,5 +197,6 @@ final class AppSettings: ObservableObject {
       defaults.object(forKey: Keys.previewShowToolActivity) as? Bool ?? true
     sortMode =
       defaults.string(forKey: Keys.sortMode).flatMap(SortMode.init(rawValue:)) ?? .statusPriority
+    notificationsEnabled = defaults.object(forKey: Keys.notificationsEnabled) as? Bool ?? false
   }
 }

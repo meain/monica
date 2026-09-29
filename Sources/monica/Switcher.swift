@@ -87,7 +87,7 @@ enum Switcher {
 
   /// v1 assumes a single attached tmux client (single Ghostty window). See
   /// DESIGN.md's "known gap" note for the multi-window upgrade path.
-  private static func firstAttachedClient() -> String? {
+  static func firstAttachedClient() -> String? {
     let output = TmuxCLI.run(["list-clients", "-F", "#{client_name}"])
     return output.split(separator: "\n").first.map(String.init)
   }

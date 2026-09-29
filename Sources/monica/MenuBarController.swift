@@ -87,6 +87,8 @@ final class MenuBarController {
     }
   }
 
+  var isPopoverShown: Bool { popover.isShown }
+
   @objc private func handleClick(_ sender: AnyObject?) {
     togglePopover()
   }

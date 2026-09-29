@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var hotKeyManager: HotKeyManager?
   private var jumpHotKeyManager: HotKeyManager?
   private var menuBar: MenuBarController?
+  private var notifier: AgentNotifier?
   private var settingsWindow: SettingsWindowController?
 
   /// Which pane the jump-to-next-idle hotkey last switched to, so
@@ -30,6 +31,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     menuBar = MenuBarController(scanner: scanner) { [weak self] in
       self?.showSettings()
     }
+    notifier = AgentNotifier(scanner: scanner) { [weak self] in
+      self?.menuBar?.isPopoverShown ?? false
+    }
+    if AppSettings.shared.notificationsEnabled { AgentNotifier.requestAuthorization() }
 
     scanner.start(interval: AppSettings.shared.pollInterval)
     registerHotKey()
