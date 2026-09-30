@@ -11,12 +11,14 @@ real tmux sessions or their transcripts, and without adding a binary to the repo
 
 1. Creates a throwaway project at `/tmp/demo-app` (a two-line `main.go` + `README.md`).
 2. Starts a **new** tmux session (`monica-demo`) and launches a real `claude` there —
-   real integration, not fabricated transcript/aistatus files (their exact shapes are
+   real integration, not fabricated transcript/session files (their exact shapes are
    finicky enough that faking them isn't worth it — see AGENTS.md's transcript-format
    gotchas).
 3. Drives one short, clean prompt designed to produce a nicely structured reply (a
    heading + a few bullet points) — good screenshot content, no real work content.
-4. Waits for that session to go idle (polls its `aistatus` pid file).
+4. Re-sends Enter until the prompt is actually submitted, then waits for the turn to
+   finish — both by polling Claude Code's own `~/.claude/sessions/<pid>.json`
+   (`busy` → `idle`).
 5. Builds monica's debug binary and renders the popover via the `MONICA_SHOT` hook
    (see the sibling `screenshot-test` skill and AGENTS.md's "Verifying the GUI"
    section) — no Screen Recording permission needed.
@@ -24,15 +26,15 @@ real tmux sessions or their transcripts, and without adding a binary to the repo
    (robust regardless of how many *real* agents are running — no row-counting).
 7. Uploads the render via `gh image` (produces a `github.com/user-attachments/assets/…`
    URL), posts it as a comment on the [meain/monica#4 "Media"](https://github.com/meain/monica/issues/4)
-   tracking issue for a durable record, and rewrites README.md's
-   `![Monica popover](...)` line to point at the new URL.
-8. Cleans up: kills the `monica-demo` tmux session, deletes `/tmp/demo-app`, deletes
-   the demo session's `aistatus` pid file.
+   tracking issue for a durable record, and rewrites the `src` of README.md's
+   `<img ... alt="Monica popover">` tag to the new URL (fails loudly if no such tag).
+8. Cleans up: kills the `monica-demo` tmux session and deletes `/tmp/demo-app`
+   (claude removes its own session file on exit).
 
 ## Usage
 
 ```sh
-.agents/skills/update-readme-screenshot/run.sh
+.claude/skills/update-readme-screenshot/run.sh
 ```
 
 Prints the new `user-attachments` URL on success. **Open it (or check the README diff)
@@ -53,7 +55,7 @@ referenced from README.md or docs.md — never add a binary image to a commit he
 
 ## Why a disposable project, not the real running agents
 
-The popover shows real, live tmux/aistatus data with no demo-data seam (unlike
+The popover shows real, live tmux/status data with no demo-data seam (unlike
 booker's `BOOKER_BM_FILE`) — pointing `MONICA_SHOT` at your actual sessions puts
 whatever you're actually working on into a file that ends up in the public README.
 Early manual runs of this same technique surfaced this by accident (a captured
@@ -65,14 +67,15 @@ project sidesteps that entirely.
 - If the script times out waiting for the demo session to go idle, `claude` may be
   slower than usual to respond (model load, network) — rerun, or bump the timeouts
   inside `run.sh`.
-- If Enter doesn't submit the prompt (occasionally the keystroke lands before the
-  textarea commits it), the script sends a follow-up Enter automatically; if the
-  screenshot still comes out at the "Try ..." placeholder rather than a real
-  agent turn, rerun.
+- An Enter sent too soon after the pasted prompt is ignored (one run needed ~11s),
+  so the script keeps re-sending Enter every 3s until the session file reads `busy`,
+  and errors out after 40s. Before this, a run could "succeed" with the agent still
+  idle at its prompt: no transcript, so an empty card and context strip.
 - The script always kills any pre-existing `monica-demo` tmux session before starting
   and removes `/tmp/demo-app` first — safe unless you happen to have your own
   unrelated session with that exact name.
-- Uses `env -u SDKROOT -u DEVELOPER_DIR swift build` per AGENTS.md's SDKROOT gotcha.
+- Builds via `nix develop -c make build` — a plain-CLT `swift build` fails since
+  Swift 6.4 (see AGENTS.md's devshell gotcha).
 
 See the sibling `screenshot-test` skill for ad-hoc popover/menu-bar rendering that
 isn't specifically about refreshing the README.
