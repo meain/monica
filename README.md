@@ -1,6 +1,6 @@
 # Monica
 
-<img align="right" width="400" src="https://github.com/user-attachments/assets/9f703ab8-cd9d-4102-ae8d-99f8d672a696" alt="Monica popover">
+<img align="right" width="400" src="https://github.com/user-attachments/assets/13e69ad5-207d-439f-9799-c9e0b2eba0cf" alt="Monica popover">
 
 A macOS menu bar app for watching and switching between AI coding agents (Claude
 Code, `pi`) running inside tmux panes.
