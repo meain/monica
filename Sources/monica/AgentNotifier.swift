@@ -28,6 +28,10 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
   private var lastStatus: [String: AgentStatus] = [:]
   private var primed = false
   private var pendingIdle: [String: Task<Void, Never>] = [:]
+  /// When the current turn started, for the duration in the title. Kept
+  /// across a waiting → working hop (approving a prompt continues the same
+  /// turn); absent for turns already running at launch.
+  private var workingSince: [String: Date] = [:]
 
   private static let idleSettle: Duration = .seconds(3)
   private static let hasBundle = Bundle.main.bundleIdentifier != nil
@@ -88,7 +92,7 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
   static func sendTest() {
     let send = {
       deliver(
-        title: "Finished · Monica",
+        title: "Monica · 4m 12s",
         body: "Test notification — this is how an agent finishing will look.",
         identifier: "monica.test", paneId: nil)
     }
@@ -110,28 +114,34 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
       current[key] = session.status
       guard primed, let previous = lastStatus[key], previous != session.status else { continue }
 
+      let elapsed = workingSince[key].map { Date().timeIntervalSince($0) }
       switch session.status {
       case .waiting:
         cancelPending(key)
-        post(session, reason: .blocked)
+        post(session, reason: .blocked, elapsed: elapsed)
       case .idle where previous == .working:
-        schedule(session, key: key)
+        workingSince[key] = nil
+        schedule(session, key: key, elapsed: elapsed)
       case .working:
         // Back at work: whatever we said about this pane is moot now.
         cancelPending(key)
+        if previous != .waiting || workingSince[key] == nil { workingSince[key] = Date() }
         if Self.hasBundle {
           UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [key])
         }
-      default:
-        break
+      case .idle:
+        workingSince[key] = nil
       }
     }
-    for key in lastStatus.keys where current[key] == nil { cancelPending(key) }
+    for key in lastStatus.keys where current[key] == nil {
+      cancelPending(key)
+      workingSince[key] = nil
+    }
     lastStatus = current
     primed = true
   }
 
-  private func schedule(_ session: AgentSession, key: String) {
+  private func schedule(_ session: AgentSession, key: String, elapsed: TimeInterval?) {
     cancelPending(key)
     pendingIdle[key] = Task { [weak self] in
       try? await Task.sleep(for: Self.idleSettle)
@@ -140,7 +150,7 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
       guard let latest = self.scanner.sessions.first(where: { Self.key($0) == key }),
         latest.status == .idle
       else { return }
-      self.post(latest, reason: .finished)
+      self.post(latest, reason: .finished, elapsed: elapsed)
     }
   }
 
@@ -148,23 +158,26 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
     pendingIdle.removeValue(forKey: key)?.cancel()
   }
 
-  private func post(_ session: AgentSession, reason: Reason) {
+  private func post(_ session: AgentSession, reason: Reason, elapsed: TimeInterval?) {
     guard AppSettings.shared.notificationsEnabled, !isPopoverShown() else { return }
     let targetApp = AppSettings.shared.targetApp
     // Focus check and transcript read both touch tmux/disk — off main.
     Task.detached {
       if Self.isViewing(session, targetApp: targetApp) { return }
-      // Status leads the title so blocked vs. done reads before the body.
-      let title: String
+      // Only a blocked agent gets the menu bar's ◆ in front, so it stands
+      // out from the plain finished ones; turn duration trails the name.
+      let prefix: String
       let body: String
       switch reason {
       case .blocked:
-        title = "Needs you · \(session.displayName)"
+        prefix = "\(AgentStatus.waiting.glyph) "
         body = session.waitingFor ?? "Blocked"
       case .finished:
-        title = "Finished · \(session.displayName)"
+        prefix = ""
         body = Self.snippet(TranscriptPreview.details(for: session).text) ?? "Awaiting you"
       }
+      let duration = elapsed.map { " · \(Self.formatDuration($0))" } ?? ""
+      let title = "\(prefix)\(session.displayName)\(duration)"
       // Same identifier per pane + pid, so a newer notification replaces an
       // older one for the same agent instead of stacking.
       await MainActor.run {
@@ -176,6 +189,8 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
 
   /// `paneId` (when set) is what a click switches to.
   private static func deliver(title: String, body: String, identifier: String, paneId: String?) {
+    let sound = AppSettings.shared.notificationSound
+    playSound(sound)
     guard hasBundle else {
       runFireAndForget(
         "/usr/bin/osascript",
@@ -189,7 +204,7 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
     let content = UNMutableNotificationContent()
     content.title = title
     content.body = body
-    content.sound = .default
+    content.sound = sound == NotificationSound.systemDefault ? .default : nil
     if let paneId {
       content.threadIdentifier = paneId
       content.userInfo = ["paneId": paneId]
@@ -213,6 +228,30 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
     let pane = TmuxCLI.run(["display-message", "-p", "-c", client, "#{pane_id}"])
       .trimmingCharacters(in: .whitespacesAndNewlines)
     return pane == session.paneId
+  }
+
+  /// A custom sound is played by monica itself rather than attached to the
+  /// notification: `UNNotificationSound(named:)` only looks in the app's
+  /// bundle and `~/Library/Sounds`, not `/System/Library/Sounds`. The
+  /// catch is that it plays even when Focus hides the banner.
+  private static var currentSound: NSSound?
+
+  static func playSound(_ name: String) {
+    guard name != NotificationSound.systemDefault, name != NotificationSound.none else { return }
+    currentSound?.stop()
+    currentSound = NSSound(named: NSSound.Name(name))
+    currentSound?.play()
+  }
+
+  /// "38s", "4m 12s", "1h 5m".
+  private nonisolated static func formatDuration(_ seconds: TimeInterval) -> String {
+    let total = Int(seconds)
+    let h = total / 3600
+    let m = total % 3600 / 60
+    let s = total % 60
+    if h > 0 { return "\(h)h \(m)m" }
+    if m > 0 { return "\(m)m \(s)s" }
+    return "\(s)s"
   }
 
   /// First ~140 chars of the last message, flattened to one line with the

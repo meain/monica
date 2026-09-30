@@ -91,6 +91,7 @@ final class AppSettings: ObservableObject {
     static let previewShowToolActivity = "monica.previewShowToolActivity"
     static let sortMode = "monica.sortMode"
     static let notificationsEnabled = "monica.notificationsEnabled"
+    static let notificationSound = "monica.notificationSound"
   }
 
   /// The app name passed to `open -a <targetApp>` when switching. Ghostty by
@@ -174,6 +175,13 @@ final class AppSettings: ObservableObject {
     }
   }
 
+  /// A `NotificationSound` sentinel or a sound name `NSSound(named:)`
+  /// resolves — distinct from macOS's default so monica's banners are
+  /// recognisable by ear.
+  @Published var notificationSound: String {
+    didSet { UserDefaults.standard.set(notificationSound, forKey: Keys.notificationSound) }
+  }
+
   /// Not persisted — set from the authorization callback so Settings can
   /// point at System Settings instead of leaving a silently dead toggle.
   @Published var notificationsDenied: Bool = false
@@ -198,5 +206,31 @@ final class AppSettings: ObservableObject {
     sortMode =
       defaults.string(forKey: Keys.sortMode).flatMap(SortMode.init(rawValue:)) ?? .statusPriority
     notificationsEnabled = defaults.object(forKey: Keys.notificationsEnabled) as? Bool ?? false
+    notificationSound =
+      defaults.string(forKey: Keys.notificationSound) ?? NotificationSound.systemDefault
+  }
+}
+
+enum NotificationSound {
+  static let systemDefault = ""
+  static let none = "none"
+
+  /// Names `NSSound(named:)` can play: the built-in alert sounds plus any
+  /// dropped into `~/Library/Sounds` or `/Library/Sounds`.
+  static func available() -> [String] {
+    let dirs = [
+      FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Sounds"),
+      URL(fileURLWithPath: "/Library/Sounds"),
+      URL(fileURLWithPath: "/System/Library/Sounds"),
+    ]
+    let extensions: Set<String> = ["aiff", "aif", "wav", "caf", "mp3", "m4a"]
+    var names = Set<String>()
+    for dir in dirs {
+      let files = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
+      for file in files where extensions.contains((file as NSString).pathExtension.lowercased()) {
+        names.insert((file as NSString).deletingPathExtension)
+      }
+    }
+    return names.sorted()
   }
 }

@@ -323,6 +323,14 @@ struct SettingsView: View {
             .disabled(!settings.notificationsEnabled)
             .help("Send a test notification")
         }
+        Picker("Notification sound", selection: $settings.notificationSound) {
+          Text("macOS default").tag(NotificationSound.systemDefault)
+          Text("None").tag(NotificationSound.none)
+          Divider()
+          ForEach(NotificationSound.available(), id: \.self) { Text($0).tag($0) }
+        }
+        .disabled(!settings.notificationsEnabled)
+        .onChange(of: settings.notificationSound) { _, name in AgentNotifier.playSound(name) }
         if settings.notificationsEnabled && settings.notificationsDenied {
           Label {
             Text("Notifications are turned off for Monica in System Settings → Notifications.")
@@ -346,7 +354,7 @@ struct SettingsView: View {
     // fit *all* sections, or the Form's internal List scrolls (with a
     // visible scrollbar despite ScrollbarSuppressor above, since hiding
     // the scroller doesn't stop the content from overflowing).
-    .frame(width: 480, height: 900)
+    .frame(width: 480, height: 940)
   }
 
   private func openDocs() {
