@@ -66,6 +66,17 @@ and → waiting, suppressed while you're viewing that pane, click switches to it
 `AgentNotifier`. If you turn it on, drop `notify-summary.sh`/`,make-noise` from the Claude
 `Stop` hook in dotfiles to avoid double notifications.
 
+**v1.6 note:** the popover became an **attention inbox**. Rows are grouped into Needs
+you (waiting) → Finished (idle) → Working → Quiet (quiet + stale), each row a card with a
+one-line snippet of the last message (three lines when selected); a selected waiting card
+gets Reply (⌘↩) / Jump (↩) buttons. Within a section rows keep the `SortMode` order, and
+the **menu bar strip is deliberately untouched** — it still follows `SortMode` (usually
+tmux order), since glyph position is how you map glyphs to panes. The 96pt markdown
+"Last message" panel was replaced by a compact context strip (branch/model/tool chips +
+last prompt); `MarkdownPreviewText` was removed with it. The status summary moved next to
+the search field, and the footer shows key hints. Claude status also now counts
+**subagent activity** (see `AgentScanner.lookupClaudeStatus`).
+
 ## Problem
 
 `,tmux-ai-agents` already does this well inside tmux (`M-'` → fzf popup → pick an agent
@@ -271,7 +282,9 @@ selection change and on each scan refresh while the popover is open) — not all
 once, since it's synchronous file I/O on the main thread. Cheap enough for a single
 tail-read per change; would need to move to a background queue if that ever changes.
 
-The preview renders as markdown (`MarkdownPreviewText`, backed by SwiftUI's native
+(Superseded in v1.6: the popover now shows a plain-text snippet per card instead of a
+markdown panel. Kept for the reasoning if a full preview comes back.) The preview
+rendered as markdown (`MarkdownPreviewText`, backed by SwiftUI's native
 `AttributedString(markdown:)`) rather than plain text, since Claude Code/pi assistant
 messages usually *are* markdown. One `Text(AttributedString)` for the whole document
 doesn't work, though — confirmed visually (a real screenshot showed
@@ -293,7 +306,8 @@ beacon's approach ported over if that becomes the primary content surface.
 The popover was originally a small fixed size, then briefly *always* sized to 60% of
 the screen height regardless of agent count (per an early version of this feature) —
 both wrong in different ways. `MenuBarController.resizeForScreen()` instead sizes the
-list to how many agents are actually showing (`rowCount * agentRowHeight`), only
+list to how many agents are actually showing (`InboxMetrics.listHeight` — per-section
+header, card and quiet-row estimates, since rows vary in height), only
 clamping at 60% of the screen height as a ceiling for when there are a lot. Recomputed
 on every `openPopover()` since the agent count can change between opens.
 
@@ -326,8 +340,8 @@ disappears — the original "everything gets thrown out of whack" complaint that
 `.background(ScrollbarSuppressor())` on the scrollable *content*, not the `ScrollView`
 itself) walks up to the real `NSScrollView` and sets `hasVerticalScroller`/
 `hasHorizontalScroller = false` and `scrollerStyle = .overlay` directly — that's the
-authoritative state `.scrollIndicators(.hidden)` doesn't fully control. Used in both
-`AgentListSection`/`LastMessageSection` (`MenuBarPopoverView.swift`) and the Quickstart
+authoritative state `.scrollIndicators(.hidden)` doesn't fully control. Used in
+`AgentListSection`/`ShortcutsHelpSection` (`MenuBarPopoverView.swift`) and the Quickstart
 section of `SettingsView` (any `.formStyle(.grouped)` `Form` is List-backed and has the
 same issue).
 
@@ -350,10 +364,9 @@ monica/
     HotKeyManager.swift            # Carbon global hotkey registration
     HotKeyFormatter.swift           # keyCode+modifiers -> display label ("⌃⌥⇧A")
     KeyRecorderView.swift            # hotkey re-recording control, used in Settings
-    AgentListView.swift               # shared SwiftUI row/list view, agentRowHeight constant
-    AgentPickerModel.swift             # popover search + keyboard nav + compose + preview state
+    AgentListView.swift               # inbox cards/sections, InboxMetrics height estimates
+    AgentPickerModel.swift             # popover search + keyboard nav + compose + preview/snippet state
     TranscriptPreview.swift             # reads last message from each agent's own transcript
-    MarkdownPreviewText.swift            # renders preview text as markdown
     PopoverLayout.swift                   # shared width/inset constants + popoverSection() modifier
     ScrollbarSuppressor.swift              # NSViewRepresentable forcing overlay/hidden scrollers
     MenuBarPopoverView.swift                # popover SwiftUI content, one View struct per section

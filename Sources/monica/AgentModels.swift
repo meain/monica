@@ -164,4 +164,31 @@ struct AgentSession: Identifiable, Equatable {
   /// Blocked on you or finished and awaiting you — what the jump hotkey
   /// cycles through and what notifications fire for.
   var isAwaitingUser: Bool { needsAttentionRank >= 1 }
+
+  var inboxSection: InboxSection {
+    if status == .waiting { return .needsYou }
+    if isStale || isQuiet { return .quiet }
+    return status == .working ? .working : .finished
+  }
+}
+
+/// The popover list's grouping, in display order: what needs you first,
+/// then what finished and is awaiting you, then what's still running, then
+/// quiet/stale sessions as a compact tail. Only the popover groups this way
+/// — the menu bar strip keeps the scanner's `SortMode` order, since that's
+/// how glyphs map to tmux positions at a glance.
+enum InboxSection: Int, CaseIterable {
+  case needsYou
+  case finished
+  case working
+  case quiet
+
+  var title: String {
+    switch self {
+    case .needsYou: return "NEEDS YOU"
+    case .finished: return "FINISHED"
+    case .working: return "WORKING"
+    case .quiet: return "QUIET"
+    }
+  }
 }

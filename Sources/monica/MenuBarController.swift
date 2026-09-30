@@ -201,11 +201,11 @@ final class MenuBarController {
     // bar (confirmed via `CGWindowListCopyWindowInfo` showing a negative
     // window Y). Keep this in sync with `PopoverLayout.outerPadding`/
     // `cardSpacing` if those change again.
-    let fixedChrome: CGFloat = 284
-    let maxListHeight = max(agentRowHeight, screenHeight * 0.6 - fixedChrome)
-    let rowCount = model.filteredSessions.count
-    let desiredListHeight =
-      rowCount == 0 ? emptyListHeight : CGFloat(rowCount) * agentRowHeight + 8
+    // Dropped from 284 when the inbox redesign replaced the 96pt message
+    // preview with a two-line context strip.
+    let fixedChrome: CGFloat = 170
+    let maxListHeight = max(InboxMetrics.card, screenHeight * 0.6 - fixedChrome)
+    let desiredListHeight = InboxMetrics.listHeight(for: model.filteredSessions)
     let listHeight = min(desiredListHeight, maxListHeight)
     model.listHeight = listHeight
     popover.contentSize = NSSize(width: PopoverLayout.width, height: fixedChrome + listHeight)

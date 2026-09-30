@@ -16,8 +16,8 @@ with three different left margins across sections before (see the gotcha below).
 ## What this is
 
 A SwiftUI/AppKit app: one `NSStatusItem` whose title shows one status glyph per agent
-(e.g. `▶ ● ○`), and one `NSPopover` (search field + agent list + Settings/Quit footer)
-that both a click on the icon and a global hotkey open — there is deliberately only one
+(e.g. `▶ ● ○`), and one `NSPopover` (search field + an "attention inbox" agent list
+grouped Needs you / Finished / Working / Quiet + context strip + footer) that both a click on the icon and a global hotkey open — there is deliberately only one
 picker UI, not separate HUD/Spotlight surfaces (an earlier version had those; see
 DESIGN.md for why they were removed). Return on a selected row switches to that agent's
 pane; ⌘Return instead composes a message to send into the pane without switching (see
@@ -296,14 +296,17 @@ that fails for SwiftUI content, not input delivery.
   actual font coverage with `CTFontCreateForString` (a scratch script, run via
   `env -u SDKROOT -u DEVELOPER_DIR /usr/bin/swift`) before assuming the system font
   renders it.
+- **The popover groups rows, the menu bar doesn't.** `AgentPickerModel.filteredSessions`
+  stable-sorts by `InboxSection` (and `selection` indexes into that order); the menu bar
+  title uses `scanner.sessions` as-is. The user reads glyph position as tmux position,
+  so don't route the menu bar through the inbox grouping.
 - **A single `Text(AttributedString)` does not render markdown block structure** —
   SwiftUI ignores `presentationIntent`, so multiple headings/paragraphs parsed into one
   `AttributedString` display with *no* separator between them at all (caught via a real
   screenshot: "GreenHighlightsCurrentStatusHitesh", several distinct lines glued
-  together). `MarkdownPreviewText.swift` splits the raw text into lines first and
-  stacks one `Text` per line in a `VStack` — don't revert to a single whole-document
-  `Text` without re-verifying via a screenshot, this exact bug has no compiler or crash
-  signal, it only shows up visually.
+  together). The old `MarkdownPreviewText.swift` (removed with the v1.6 inbox redesign)
+  split the raw text into lines and stacked one `Text` per line — do the same if a
+  markdown preview comes back; this bug has no compiler or crash signal.
 - **Left-margin consistency across sections needs an explicit shared inset, not
   independent per-section padding.** The popover's root `VStack` had no `alignment:`
   parameter → defaulted to `.center`, and the search field, list rows, and preview panel

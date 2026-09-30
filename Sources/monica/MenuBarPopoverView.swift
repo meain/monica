@@ -27,8 +27,8 @@ struct MenuBarPopoverView: View {
       if model.composeTarget == nil {
         if model.showingHelp {
           ShortcutsHelpSection()
-        } else {
-          LastMessageSection(model: model)
+        } else if model.selectedSession != nil {
+          ContextStripSection(model: model)
         }
       }
 
@@ -54,14 +54,7 @@ private struct SearchFieldSection: View {
         .textFieldStyle(.plain)
         .font(.system(size: 14))
         .focused(isFocused)
-      if !model.filteredSessions.isEmpty {
-        Text("\(model.filteredSessions.count)")
-          .font(.system(size: 10, weight: .medium))
-          .foregroundStyle(.secondary)
-          .padding(.horizontal, 6)
-          .padding(.vertical, 1)
-          .background(Capsule().fill(Color.secondary.opacity(0.12)))
-      }
+      StatusSummaryView(model: model)
     }
     .popoverSection(vertical: 9)
     .popoverCard()
@@ -153,6 +146,7 @@ private struct AgentListSection: View {
           sessions: model.filteredSessions,
           selection: model.selection,
           isFiltering: !model.filterText.isEmpty,
+          snippet: model.snippet(for:),
           onSelect: model.select,
           onCommit: model.choose,
           onSendMessage: model.composeMessage,
@@ -182,7 +176,8 @@ private struct AgentListSection: View {
       .scrollIndicators(.hidden)
       .onChange(of: model.selection) { scrollToSelection(proxy) }
     }
-    .popoverCard()
+    // No `.popoverCard()` here: each row is its own card now, sitting
+    // directly on the popover background (see `InboxCardRow`'s insets).
     // Shared across all rows rather than per-row @State, since a context
     // menu's Button closure has no view identity of its own to hang state
     // off of — `AgentPickerModel.pendingKillSession` is the single source
@@ -214,41 +209,23 @@ private struct AgentListSection: View {
   }
 }
 
-private struct LastMessageSection: View {
+/// The selected agent's context, compact: branch/model/tool chips and the
+/// last prompt. The message itself is the selected card's snippet now, so
+/// there's no big preview panel — ⌘⇧C (or the copy button) still copies the
+/// full message.
+private struct ContextStripSection: View {
   @ObservedObject var model: AgentPickerModel
   @ObservedObject private var settings = AppSettings.shared
 
   private var details: TranscriptDetails { model.previewDetails }
 
-  /// Inner padding of the preview card; the text's fixed wrapping width
-  /// below must subtract it from both sides.
-  private static let cardPadding: CGFloat = 8
-
-  /// True once at least one enabled detail toggle actually has data to
-  /// show — keeps the chip row from reserving space when nothing's there
-  /// (e.g. every pi session, which never has a git branch). Tool activity
-  /// gets its own line (like "You:") rather than a chip — see below.
-  private var showsMetaRow: Bool {
-    (settings.previewShowGitBranch && details.gitBranch != nil)
-      || (settings.previewShowModel && details.model != nil)
-  }
-
   var body: some View {
-    VStack(alignment: .leading, spacing: 5) {
+    VStack(alignment: .leading, spacing: 4) {
       HStack(spacing: 5) {
-        Image(systemName: "quote.bubble")
-          .font(.system(size: 9, weight: .semibold))
-          .foregroundStyle(.secondary)
-        Text("LAST MESSAGE")
-          .font(.system(size: 9, weight: .semibold))
-          .tracking(0.6)
-          .foregroundStyle(.secondary)
-        Spacer(minLength: 8)
-        if let selected = model.selectedSession {
-          Text(selected.displayName)
-            .font(.system(size: 10))
-            .foregroundStyle(.tertiary)
-            .lineLimit(1)
+        // Horizontally scrollable rather than wrapping, so a long tool
+        // summary or model name can't blow out the popover's fixed width.
+        ScrollView(.horizontal, showsIndicators: false) {
+          MetaChipsRow(details: details, settings: settings)
         }
         if details.text != nil {
           Button(action: model.copyPreviewToPasteboard) {
@@ -260,29 +237,6 @@ private struct LastMessageSection: View {
           .help("Copy last message (⌘⇧C)")
         }
       }
-
-      if showsMetaRow {
-        // Horizontally scrollable rather than wrapping, so a long tool
-        // summary or model name can't blow out the popover's fixed
-        // width — same reasoning as the ScrollView-based clamping used
-        // elsewhere in this file.
-        ScrollView(.horizontal, showsIndicators: false) {
-          MetaChipsRow(details: details, settings: settings)
-        }
-      }
-
-      if settings.previewShowToolActivity, let tool = details.toolActivity {
-        HStack(alignment: .top, spacing: 4) {
-          Text("Tool:")
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.tertiary)
-          Text(tool)
-            .font(.system(size: 10))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-        }
-      }
-
       if settings.previewShowLastPrompt, let prompt = details.lastPrompt, !prompt.isEmpty {
         HStack(alignment: .top, spacing: 4) {
           Text("You:")
@@ -291,41 +245,11 @@ private struct LastMessageSection: View {
           Text(prompt)
             .font(.system(size: 10))
             .foregroundStyle(.secondary)
-            .lineLimit(2)
+            .lineLimit(1)
         }
       }
-
-      ScrollView {
-        MarkdownPreviewText(
-          raw: details.text ?? "No agent selected"
-        )
-        .font(.system(size: 11))
-        .foregroundColor(.secondary)
-        // `ScrollView` doesn't reliably constrain a `Text`'s
-        // wrapping width from `maxWidth: .infinity` alone — it
-        // can propose an unbounded width, so the text stays on
-        // one line and blows out the popover's overall width. A
-        // genuine fixed width forces real wrapping.
-        .frame(
-          width: PopoverLayout.contentWidth - Self.cardPadding * 2,
-          alignment: .leading
-        )
-        .textSelection(.enabled)
-        // This is the panel where the scrollbar thumb was
-        // actually confirmed visible via a real screenshot
-        // despite `.scrollIndicators(.hidden)` below — see
-        // `ScrollbarSuppressor`'s doc comment for why.
-        .background(ScrollbarSuppressor())
-        .padding(Self.cardPadding)
-      }
-      .frame(height: 96)
-      .scrollIndicators(.hidden)
-      .background(
-        RoundedRectangle(cornerRadius: PopoverLayout.innerCornerRadius)
-          .fill(Color.primary.opacity(0.05))
-      )
     }
-    .popoverSection()
+    .popoverSection(vertical: 7)
     .popoverCard()
   }
 }
@@ -352,9 +276,8 @@ private struct MetaChip: View {
   }
 }
 
-/// Git branch / model, each independently toggleable from Settings and each
-/// only shown when the transcript actually had that field. Tool activity has
-/// its own line further down (see `LastMessageSection`), not a chip here.
+/// Git branch / model / tool activity, each independently toggleable from
+/// Settings and each only shown when the transcript actually had that field.
 private struct MetaChipsRow: View {
   let details: TranscriptDetails
   @ObservedObject var settings: AppSettings
@@ -366,6 +289,9 @@ private struct MetaChipsRow: View {
       }
       if settings.previewShowModel, let model = details.model {
         MetaChip(systemImage: "cpu", text: model)
+      }
+      if settings.previewShowToolActivity, let tool = details.toolActivity {
+        MetaChip(systemImage: "wrench.and.screwdriver", text: tool)
       }
     }
   }
@@ -427,10 +353,10 @@ private struct ShortcutsHelpSection: View {
   }
 }
 
-private struct FooterSection: View {
+/// "1 waiting · 2 working · 4 agents" beside the search field, each segment
+/// a tap-to-filter shortcut.
+private struct StatusSummaryView: View {
   @ObservedObject var model: AgentPickerModel
-  let onSettings: () -> Void
-  let onQuit: () -> Void
 
   private struct StatusChip {
     let label: String
@@ -487,16 +413,30 @@ private struct FooterSection: View {
 
   var body: some View {
     HStack(spacing: 4) {
-      HStack(spacing: 4) {
-        ForEach(Array(chips.enumerated()), id: \.offset) { index, chip in
-          if index > 0 {
-            Text("·").foregroundStyle(.tertiary)
-          }
-          StatusChipText(label: chip.label) { tap(chip) }
+      ForEach(Array(chips.enumerated()), id: \.offset) { index, chip in
+        if index > 0 {
+          Text("·").foregroundStyle(.tertiary)
         }
+        StatusChipText(label: chip.label) { tap(chip) }
       }
-      .font(.system(size: 11))
-      .lineLimit(1)
+    }
+    .font(.system(size: 11))
+    .lineLimit(1)
+    .fixedSize()
+  }
+}
+
+/// Key hints for the inbox's two actions, plus help/settings/quit.
+private struct FooterSection: View {
+  @ObservedObject var model: AgentPickerModel
+  let onSettings: () -> Void
+  let onQuit: () -> Void
+
+  var body: some View {
+    HStack(spacing: 10) {
+      KeyHint(key: "↩", label: "jump")
+      KeyHint(key: "⌘↩", label: "reply")
+      KeyHint(key: "esc", label: "close")
       Spacer(minLength: 8)
       FooterIconButton(
         systemImage: "questionmark.circle", help: "Shortcuts", isActive: model.showingHelp,
@@ -507,6 +447,21 @@ private struct FooterSection: View {
     }
     .popoverSection(vertical: 7)
     .popoverCard()
+  }
+}
+
+private struct KeyHint: View {
+  let key: String
+  let label: String
+
+  var body: some View {
+    HStack(spacing: 4) {
+      KeyCap(label: key)
+        .scaleEffect(0.85)
+      Text(label)
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
+    }
   }
 }
 

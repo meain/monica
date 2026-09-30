@@ -15,9 +15,16 @@ final class AgentPickerModel: ObservableObject {
   @Published var sessions: [AgentSession] = [] {
     didSet {
       updatePreview()
+      updateSnippets()
       notifyIfVisibleCountChanged()
     }
   }
+
+  /// Each row's last assistant message, keyed by pane id — the one-line
+  /// snippet under every inbox card. Re-read only when that session's
+  /// `lastUpdated` moves (`snippetStamps`), not on every 1s refresh.
+  @Published private(set) var snippets: [String: String] = [:]
+  private var snippetStamps: [String: Date?] = [:]
   @Published var selection = 0 {
     didSet { updatePreview() }
   }
@@ -105,7 +112,20 @@ final class AgentPickerModel: ObservableObject {
     DispatchQueue.main.async { [weak self] in self?.requestFocus() }
   }
 
+  /// Filtered, then grouped by `InboxSection` — `selection` indexes into
+  /// this, so it has to be in the same order the list draws. The sort is
+  /// stable (index tiebreak), so within a section rows keep `sessions`'
+  /// own order (the scanner's `SortMode`).
   var filteredSessions: [AgentSession] {
+    matchingSessions.enumerated()
+      .sorted {
+        let (s0, s1) = ($0.element.inboxSection.rawValue, $1.element.inboxSection.rawValue)
+        return s0 != s1 ? s0 < s1 : $0.offset < $1.offset
+      }
+      .map(\.element)
+  }
+
+  private var matchingSessions: [AgentSession] {
     guard !filterText.isEmpty else { return sessions }
     return sessions.filter {
       $0.displayTitle.localizedCaseInsensitiveContains(filterText)
@@ -260,6 +280,28 @@ final class AgentPickerModel: ObservableObject {
             return
           }
           self.previewDetails = details
+        }
+      }
+    }
+  }
+
+  /// The selected row's snippet comes from `previewDetails` (read on every
+  /// refresh); the rest from the `snippets` cache.
+  func snippet(for session: AgentSession) -> String? {
+    if session.id == selectedSession?.id, let text = previewDetails.text { return text }
+    return snippets[session.id]
+  }
+
+  private func updateSnippets() {
+    let stale = sessions.filter { snippetStamps[$0.id] != .some($0.lastUpdated) }
+    guard !stale.isEmpty else { return }
+    for session in stale { snippetStamps[session.id] = .some(session.lastUpdated) }
+    Self.previewQueue.async { [weak self] in
+      let fresh = stale.map { ($0.id, TranscriptPreview.details(for: $0).text) }
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated {
+          guard let self else { return }
+          for (id, text) in fresh { self.snippets[id] = text }
         }
       }
     }
