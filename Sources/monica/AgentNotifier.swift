@@ -4,7 +4,8 @@ import UserNotifications
 
 /// Desktop notifications when an agent starts awaiting you: finished its
 /// turn (working → idle) or got blocked on a prompt (→ waiting). Clicking
-/// one switches to that agent's pane, same as Return in the popover.
+/// one (or its Switch action) switches to that agent's pane, same as Return
+/// in the popover; its Reply action sends a message into the pane instead.
 ///
 /// Driven purely by diffing successive `AgentScanner.sessions` values — no
 /// hooks of its own. Keyed by pane + pid so a pane that gets a new agent
@@ -33,13 +34,33 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
 
   private enum Reason { case finished, blocked }
 
+  private static let agentCategory = "monica.agent"
+  private static let switchAction = "monica.switch"
+  private static let replyAction = "monica.reply"
+
+  /// Switch does what a plain click does; Reply sends the typed text into
+  /// the pane via `Switcher.sendMessage`, same as ⌘Return in the popover,
+  /// without bringing the terminal forward.
+  private static func makeAgentCategory() -> UNNotificationCategory {
+    let switchTo = UNNotificationAction(identifier: switchAction, title: "Switch")
+    let reply = UNTextInputNotificationAction(
+      identifier: replyAction, title: "Reply…",
+      textInputButtonTitle: "Send", textInputPlaceholder: "Message to agent")
+    return UNNotificationCategory(
+      identifier: agentCategory, actions: [switchTo, reply], intentIdentifiers: [])
+  }
+
   init(scanner: AgentScanner, isPopoverShown: @escaping () -> Bool) {
     self.scanner = scanner
     self.isPopoverShown = isPopoverShown
     super.init()
     // Must be set before launch finishes, or a click that launched/
     // activated the app is delivered to nobody.
-    if Self.hasBundle { UNUserNotificationCenter.current().delegate = self }
+    if Self.hasBundle {
+      let center = UNUserNotificationCenter.current()
+      center.delegate = self
+      center.setNotificationCategories([Self.makeAgentCategory()])
+    }
     subscription = scanner.$sessions.sink { [weak self] sessions in
       self?.observe(sessions)
     }
@@ -67,7 +88,8 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
   static func sendTest() {
     let send = {
       deliver(
-        title: "Monica", body: "Test notification — this is how an agent finishing will look.",
+        title: "Finished · Monica",
+        body: "Test notification — this is how an agent finishing will look.",
         identifier: "monica.test", paneId: nil)
     }
     guard hasBundle else {
@@ -132,14 +154,16 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
     // Focus check and transcript read both touch tmux/disk — off main.
     Task.detached {
       if Self.isViewing(session, targetApp: targetApp) { return }
-      let title = session.displayName
+      // Status leads the title so blocked vs. done reads before the body.
+      let title: String
       let body: String
       switch reason {
       case .blocked:
-        body = "Needs you — \(session.waitingFor ?? "blocked")"
+        title = "Needs you · \(session.displayName)"
+        body = session.waitingFor ?? "Blocked"
       case .finished:
-        body =
-          Self.snippet(TranscriptPreview.details(for: session).text) ?? "Finished — awaiting you"
+        title = "Finished · \(session.displayName)"
+        body = Self.snippet(TranscriptPreview.details(for: session).text) ?? "Awaiting you"
       }
       // Same identifier per pane + pid, so a newer notification replaces an
       // older one for the same agent instead of stacking.
@@ -169,6 +193,7 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
     if let paneId {
       content.threadIdentifier = paneId
       content.userInfo = ["paneId": paneId]
+      content.categoryIdentifier = agentCategory
     }
     let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
     UNUserNotificationCenter.current().add(request)
@@ -208,10 +233,20 @@ final class AgentNotifier: NSObject, UNUserNotificationCenterDelegate {
     withCompletionHandler completionHandler: @escaping () -> Void
   ) {
     let paneId = response.notification.request.content.userInfo["paneId"] as? String
+    let action = response.actionIdentifier
+    let replyText = (response as? UNTextInputNotificationResponse)?.userText
+      .trimmingCharacters(in: .whitespacesAndNewlines)
     DispatchQueue.main.async {
       MainActor.assumeIsolated {
-        if let paneId, let session = self.scanner.sessions.first(where: { $0.paneId == paneId }) {
+        guard let paneId, let session = self.scanner.sessions.first(where: { $0.paneId == paneId })
+        else { return }
+        switch action {
+        case Self.replyAction:
+          if let replyText, !replyText.isEmpty { Switcher.sendMessage(session, text: replyText) }
+        case Self.switchAction, UNNotificationDefaultActionIdentifier:
           Switcher.activate(session, targetApp: AppSettings.shared.targetApp)
+        default:
+          break  // dismissed
         }
       }
       completionHandler()
