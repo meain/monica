@@ -120,7 +120,9 @@ enum MonicaCLI {
       ("prompt", details.lastPrompt),
     ]
     fields.removeAll { $0.1 == nil }
-    for (key, value) in fields { print("\(key.padding(toLength: 8, withPad: " ", startingAt: 0))\(value!)") }
+    for (key, value) in fields {
+      print("\(key.padding(toLength: 8, withPad: " ", startingAt: 0))\(value!)")
+    }
     if let text = details.text {
       print("\n\(text)")
     } else if let screen {
@@ -239,7 +241,8 @@ enum MonicaCLI {
           Date().timeIntervalSince(start) >= grace
         {
           FileHandle.standardError.write(
-            Data("monica: no turn started within \(Int(grace))s; assuming input was handled\n".utf8))
+            Data("monica: no turn started within \(Int(grace))s; assuming input was handled\n".utf8)
+          )
           return 0
         }
       }
