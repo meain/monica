@@ -163,6 +163,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 }
 
+// `monica <command>` is the CLI (see CLI.swift) — run it and exit before any
+// NSApplication setup. Bare `monica` falls through to the menu bar app.
+if let code = MonicaCLI.runIfRequested(CommandLine.arguments) { exit(code) }
+
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 let delegate = AppDelegate()

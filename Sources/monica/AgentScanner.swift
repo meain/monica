@@ -154,6 +154,12 @@ final class AgentScanner: ObservableObject {
 /// The scan itself — pure functions of their input plus the filesystem/tmux,
 /// no main-actor state, so it runs on `AgentScanner`'s background queue.
 private enum ScanEngine {
+  /// One blocking full scan, for the CLI (`MonicaCLI`) — no timer, watcher or
+  /// main-actor state involved. Nil when tmux/ps didn't answer.
+  static func snapshot() -> [AgentSession]? {
+    run(Input(kind: .full, previousAgents: [], sortMode: .tmux, lastActivated: [:]))?.sessions
+  }
+
   static let statusDir = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent(".local/share/aistatus").path
   static let claudeSessionsDir = FileManager.default.homeDirectoryForCurrentUser
@@ -593,3 +599,7 @@ private final class StatusDirWatcher {
     FSEventStreamRelease(stream)
   }
 }
+
+/// Internal entry point to `ScanEngine.snapshot()` (the engine itself is
+/// file-private) for the CLI.
+func scanAgentsOnce() -> [AgentSession]? { ScanEngine.snapshot() }

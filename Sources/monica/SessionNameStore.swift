@@ -12,8 +12,18 @@ import Foundation
 enum SessionNameStore {
   private static let key = "monica.customNames"
 
+  /// Set by the CLI, which runs as a bare process whose `UserDefaults.standard`
+  /// is *not* the app's `com.meain.monica` domain — reads go to that domain
+  /// explicitly instead. Nil in the app itself.
+  static var readDomain: String?
+
   static func name(for pid: Int32) -> String? {
-    let names = UserDefaults.standard.dictionary(forKey: key) as? [String: String]
+    let names: [String: String]?
+    if let readDomain {
+      names = UserDefaults.standard.persistentDomain(forName: readDomain)?[key] as? [String: String]
+    } else {
+      names = UserDefaults.standard.dictionary(forKey: key) as? [String: String]
+    }
     return names?[String(pid)]
   }
 

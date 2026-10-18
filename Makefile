@@ -16,7 +16,7 @@ ifdef MONICA_DEVELOPER_DIR
 export DEVELOPER_DIR := $(MONICA_DEVELOPER_DIR)
 endif
 
-.PHONY: build run release app install link unlink icon format lint clean help
+.PHONY: build run release app install link link-cli unlink icon format lint clean help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -48,6 +48,11 @@ link: app ## Symlink monica.app into /Applications (points at this build)
 	rm -rf "$(APPS_DIR)/$(APP)"
 	ln -s "$(CURDIR)/$(APP)" "$(APPS_DIR)/$(APP)"
 	@echo "Linked $(APPS_DIR)/$(APP) -> $(CURDIR)/$(APP)"
+
+link-cli: app ## Symlink the app's binary to ~/.local/bin/monica (the CLI)
+	mkdir -p "$(HOME)/.local/bin"
+	ln -sf "$(CURDIR)/$(APP)/Contents/MacOS/monica" "$(HOME)/.local/bin/monica"
+	@echo "Linked ~/.local/bin/monica -> $(CURDIR)/$(APP)/Contents/MacOS/monica"
 
 unlink: ## Remove monica.app from /Applications
 	rm -rf "$(APPS_DIR)/$(APP)"
