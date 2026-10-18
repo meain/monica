@@ -41,6 +41,27 @@ make app      # release build wrapped as monica.app (LSUIElement, no dock icon)
 make link     # symlink monica.app into /Applications
 ```
 
+## CLI
+
+The same binary is a CLI when given a command (bare `monica` launches the app). It
+scans tmux directly, so it works with or without the app running.
+
+```bash
+make link-cli                  # symlink the app's binary to ~/.local/bin/monica
+monica ls [--json] [--status waiting]
+monica show <target>           # details + last message
+monica focus <target>          # switch tmux to the pane, raise the terminal
+echo "run the tests" | monica send <target> --wait   # send, block until the turn ends
+monica tail <target> -n 30     # what's on the agent's screen
+monica wait <target> --timeout 600
+```
+
+`<target>` is a pane id (`%12`), a pid, or a substring of the agent's name/project/tmux
+session/window that matches exactly one agent. `wait`/`send --wait` exit 0 when the
+agent finishes, 3 if it's blocked waiting on you, 124 on timeout. Input that never starts
+a turn (`/clear`) makes `send --wait` return after a 5s grace period. `ls` marks your own
+pane (from `$TMUX_PANE`) and `send` refuses it without `--force`.
+
 ## More
 
 See `AGENTS.md` for build/test details and a list of non-obvious gotchas, and

@@ -156,6 +156,15 @@ that fails for SwiftUI content, not input delivery.
 
 ## Non-obvious gotchas
 
+- **The CLI is the same binary, not a second target.** `main.swift` calls
+  `MonicaCLI.runIfRequested` (`CLI.swift`) before any `NSApplication` setup: any argv
+  → run the command and `exit`, no args → menu bar app. It reuses `ScanEngine` (via
+  `scanAgentsOnce()`), `Switcher` and `TranscriptPreview` directly, no IPC. A bare
+  process's `UserDefaults.standard` isn't the app's `com.meain.monica` domain, so the CLI
+  reads custom names/`targetApp` via `persistentDomain(forName:)`
+  (`SessionNameStore.readDomain`). Test `ls`/`show`/`wait` freely; `send` and `focus`
+  act on real panes/the real tmux client.
+
 - **Build inside the devshell** (`nix develop` / direnv) — Swift 6.4's default build
   system fails with "Could not initialize build system … Unknown error parsing property
   list" when run against the plain system CLT on this machine: it enumerates every SDK
