@@ -35,7 +35,7 @@ enum StatusStyle {
 /// The row's leading status indicator: a filled dot with a soft glow for
 /// working (so it reads as "live" at a glance), a filled orange diamond for
 /// waiting (blocked on you), a hollow ring for idle, a filled gray dot once
-/// quiet (15m-3h since the last status update), and a dashed ring for stale
+/// quiet (30m-3h since the last status update), and a dashed ring for stale
 /// — the same shape language as the menu bar glyphs (▶ ◆ ○ ● ◌) without
 /// mixing text glyphs into the rows.
 struct StatusIndicator: View {

@@ -46,7 +46,7 @@ instead of two). `pi` has no such registry and still reads aistatus. In tandem, 
 **`waiting` status was removed entirely** — the registry only distinguishes `busy`/`idle`,
 so a separate "blocked on you" state can't be told apart reliably. There are now two
 live states, `working` (registry `busy`) and `idle` (everything else — finished its turn,
-awaiting you); pi's old aistatus `waiting` collapses into `idle`. The 15m "quiet" and 3h
+awaiting you); pi's old aistatus `waiting` collapses into `idle`. The 30m "quiet" and 3h
 "stale" time-based overlays are unchanged. The jump hotkey and "Needs attention" sort,
 both previously built around `waiting`, now target `idle` (the agent awaiting you).
 
@@ -213,7 +213,7 @@ collapses the title to a single aggregate glyph. (The old yellow `●` `waiting`
 gone — see the v1.4 note.)
 
 Two more glyphs on top of those two, both time-based overlays that override whatever the
-`status` value says: `●` (filled gray dot) once `lastUpdated` is 15m–3h old ("quiet"),
+`status` value says: `●` (filled gray dot) once `lastUpdated` is 30m–3h old ("quiet"),
 and `◌` (dotted circle) once it's more than 3h old ("stale") — a `working` status from
 5 hours ago is more likely a dead/abandoned session than one still wanting attention.
 This is a display-layer decision
